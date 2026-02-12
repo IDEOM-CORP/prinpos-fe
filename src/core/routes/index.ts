@@ -1,9 +1,41 @@
 // Application routes configuration
-// Define and export routes here
 
-// Example:
-// export const ROUTES = {
-//   HOME: '/',
-//   LOGIN: '/login',
-//   DASHBOARD: '/dashboard',
-// };
+export const ROUTES = {
+  // Auth
+  LOGIN: "/login",
+
+  // Dashboard
+  DASHBOARD: "/",
+
+  // Cashier
+  CASHIER: "/cashier",
+
+  // Production
+  PRODUCTION: "/production",
+
+  // Orders
+  ORDERS: "/orders",
+  ORDER_DETAIL: "/orders/:id",
+
+  // Items
+  ITEMS: "/items",
+
+  // Users
+  USERS: "/users",
+
+  // Organization
+  ORGANIZATIONS: "/organizations",
+  BRANCHES: "/branches",
+
+  // Reports
+  REPORTS: "/reports",
+
+  // Admin (Internal)
+  ADMIN_LOGIN: "/admin/login",
+  ADMIN_DASHBOARD: "/admin",
+  ADMIN_ORGANIZATIONS: "/admin/organizations",
+  ADMIN_USERS: "/admin/users",
+  ADMIN_BRANCHES: "/admin/branches",
+} as const;
+
+export type RouteKeys = keyof typeof ROUTES;
