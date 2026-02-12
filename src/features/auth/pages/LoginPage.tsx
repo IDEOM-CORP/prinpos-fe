@@ -71,14 +71,22 @@ export default function LoginPage() {
         overflow: "hidden",
       }}
     >
-      <Grid style={{ width: "100%", height: "100%", margin: 0 }}>
+      <Grid
+        style={{
+          width: "100%",
+          height: "100%",
+          margin: 0,
+          display: "flex",
+          justifyContent: "center",
+        }}
+      >
         {/* Left Side - Brand Section */}
         <Grid.Col
           span={{ base: 0, md: 6 }}
           style={{
             padding: 0,
             display: "flex",
-            background: "#228be6",
+            background: "#278783",
             height: "100vh",
           }}
         >
@@ -229,7 +237,7 @@ export default function LoginPage() {
             alignItems: "center",
             justifyContent: "center",
             padding: "2rem",
-            background: "#f8f9fa",
+            background: "#FAF5EE",
             height: "100%",
           }}
         >
@@ -247,7 +255,7 @@ export default function LoginPage() {
                     width: 60,
                     height: 60,
                     borderRadius: "50%",
-                    background: "#228be6",
+                    background: "#278783",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
@@ -301,7 +309,7 @@ export default function LoginPage() {
                     loading={loading}
                     mt="md"
                     size="md"
-                    color="blue"
+                    color="aqua"
                   >
                     Masuk
                   </Button>
@@ -318,7 +326,7 @@ export default function LoginPage() {
                   <Group gap="xs" wrap="nowrap">
                     <Badge
                       variant="light"
-                      color="blue"
+                      color="aqua"
                       size="sm"
                       style={{ minWidth: "80px" }}
                     >

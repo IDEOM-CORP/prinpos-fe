@@ -163,7 +163,7 @@ export default function BranchesPage() {
                     </Table.Td>
                     <Table.Td>
                       <Badge
-                        color={branch.type === "outlet" ? "blue" : "green"}
+                        color={branch.type === "outlet" ? "aqua" : "green"}
                       >
                         {branch.type.toUpperCase()}
                       </Badge>

@@ -70,17 +70,17 @@ export default function SuperAdminLayout({ children }: SuperAdminLayoutProps) {
       padding="md"
       styles={{
         main: {
-          background: "var(--mantine-color-gray-0)",
+          background: "#FAF5EE",
         },
       }}
     >
       <AppShell.Header>
         <Group h="100%" px="md" justify="space-between">
           <Group>
-            <Text size="xl" fw={700} c="red">
+            <Text size="xl" fw={700} c="aqua.8">
               {APP_NAME}
             </Text>
-            <Badge color="red" variant="filled">
+            <Badge color="dark" variant="filled">
               Internal Admin
             </Badge>
           </Group>
@@ -88,7 +88,7 @@ export default function SuperAdminLayout({ children }: SuperAdminLayoutProps) {
           <Menu shadow="md" width={200}>
             <Menu.Target>
               <ActionIcon variant="subtle" size="lg">
-                <Avatar size="sm" radius="xl" color="red">
+                <Avatar size="sm" radius="xl" color="aqua.8">
                   {user?.name.charAt(0).toUpperCase()}
                 </Avatar>
               </ActionIcon>
@@ -126,7 +126,7 @@ export default function SuperAdminLayout({ children }: SuperAdminLayoutProps) {
               if (opened) toggle();
             }}
             mb="xs"
-            color="red"
+            color="aqua.8"
           />
         ))}
       </AppShell.Navbar>

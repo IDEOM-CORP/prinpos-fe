@@ -63,7 +63,7 @@ export default function ProductionPage() {
       case "pending":
         return "orange";
       case "in-progress":
-        return "blue";
+        return "aqua";
       case "completed":
         return "green";
       default:

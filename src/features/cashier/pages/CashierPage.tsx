@@ -32,7 +32,7 @@ import {
   IconCalendar,
   IconLogout,
   IconDashboard,
-  IconChevronLeft,
+  IconArrowLeft,
 } from "@tabler/icons-react";
 import { useNavigate } from "react-router-dom";
 import type { Item } from "../../../shared/types";
@@ -256,9 +256,9 @@ export default function CashierPage() {
             onClick={() => navigate(ROUTES.DASHBOARD)}
             title="Kembali ke Dashboard"
           >
-            <IconChevronLeft size={24} />
+            <IconArrowLeft size={24} />
           </ActionIcon>
-          <Text size="xl" fw={700} c="blue">
+          <Text size="xl" fw={700} c="aqua">
             {APP_NAME} - Kasir
           </Text>
         </Group>
@@ -266,7 +266,7 @@ export default function CashierPage() {
         <Menu shadow="md" width={200}>
           <Menu.Target>
             <ActionIcon variant="subtle" size="lg">
-              <Avatar size="sm" radius="xl" color="blue">
+              <Avatar size="sm" radius="xl" color="aqua">
                 {user?.name.charAt(0).toUpperCase()}
               </Avatar>
             </ActionIcon>
@@ -385,7 +385,7 @@ export default function CashierPage() {
                           position: "absolute",
                           top: 8,
                           right: 8,
-                          background: "var(--mantine-color-blue-6)",
+                          background: "var(--mantine-color-aqua-6)",
                           color: "white",
                           borderRadius: "50%",
                           width: 24,
@@ -425,7 +425,7 @@ export default function CashierPage() {
                       >
                         {item.name}
                       </Text>
-                      <Text size="lg" fw={700} c="blue">
+                      <Text size="lg" fw={700} c="aqua">
                         {formatCurrency(item.price)}
                       </Text>
                       <Text size="xs" c={item.stock > 0 ? "dimmed" : "red"}>
@@ -445,7 +445,7 @@ export default function CashierPage() {
             width: "400px",
             display: "flex",
             flexDirection: "column",
-            background: "var(--mantine-color-gray-0)",
+            background: "#FAF5EE",
           }}
         >
           {/* Cart Header */}
@@ -542,7 +542,7 @@ export default function CashierPage() {
                   <Text size="xl" fw={700}>
                     Total
                   </Text>
-                  <Text size="xl" fw={700} c="blue">
+                  <Text size="xl" fw={700} c="aqua">
                     {formatCurrency(total)}
                   </Text>
                 </Flex>
@@ -582,7 +582,7 @@ export default function CashierPage() {
                 <Stack gap="xs">
                   <Flex justify="space-between">
                     <Text fw={600}>Total Pembayaran</Text>
-                    <Text size="xl" fw={700} c="blue">
+                    <Text size="xl" fw={700} c="aqua">
                       {formatCurrency(total)}
                     </Text>
                   </Flex>

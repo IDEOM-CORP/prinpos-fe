@@ -71,7 +71,7 @@ export default function CartItemCard({
             </Text>
           )}
           {cartItem.material && (
-            <Text size="xs" c="blue">
+            <Text size="xs" c="aqua">
               Material: {cartItem.material}
             </Text>
           )}
@@ -103,7 +103,7 @@ export default function CartItemCard({
           mb="sm"
           p="xs"
           style={{
-            background: "var(--mantine-color-gray-0)",
+            background: "#FAF5EE",
             borderRadius: "4px",
           }}
         >
@@ -191,7 +191,7 @@ export default function CartItemCard({
               {cartItem.area.toFixed(2)}m²
             </Text>
           )}
-          <Text fw={700} c="blue">
+          <Text fw={700} c="aqua">
             {formatCurrency(calculateItemTotal())}
           </Text>
         </Stack>

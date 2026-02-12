@@ -126,7 +126,7 @@ export default function ReportsPage() {
             title="Total Orders"
             value={totalOrders}
             icon={<IconFileText size={30} />}
-            color="blue"
+            color="aqua"
             subtitle={`${pendingOrders} pending, ${inProgressOrders} proses`}
           />
         </Grid.Col>
@@ -311,7 +311,7 @@ export default function ReportsPage() {
                             order.status === "completed"
                               ? "green"
                               : order.status === "in-progress"
-                                ? "blue"
+                                ? "aqua"
                                 : "orange"
                           }
                           fw={500}

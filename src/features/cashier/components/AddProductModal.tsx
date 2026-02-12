@@ -127,12 +127,12 @@ export default function AddProductModal({
             </Group>
 
             {area > 0 && (
-              <Paper p="sm" withBorder bg="blue.0">
+              <Paper p="sm" withBorder bg="aqua.0">
                 <Group justify="space-between">
                   <Text size="sm" fw={500}>
                     Luas Area
                   </Text>
-                  <Text size="lg" fw={700} c="blue">
+                  <Text size="lg" fw={700} c="aqua">
                     {area.toFixed(2)} m²
                   </Text>
                 </Group>
@@ -169,7 +169,7 @@ export default function AddProductModal({
             <Text size="sm" c="dimmed" mb="xs">
               Harga Satuan
             </Text>
-            <Text size="xl" fw={700} c="blue">
+            <Text size="xl" fw={700} c="aqua">
               {formatCurrency(item.price)}
             </Text>
           </Paper>
@@ -188,11 +188,11 @@ export default function AddProductModal({
 
         <Divider />
 
-        <Paper p="md" withBorder bg="gray.0">
+        <Paper p="md" withBorder bg="aqua.0">
           <Stack gap="xs">
             <Group justify="space-between">
               <Text fw={500}>Total Harga</Text>
-              <Text size="xl" fw={700} c="blue">
+              <Text size="xl" fw={700} c="aqua">
                 {formatCurrency(total)}
               </Text>
             </Group>

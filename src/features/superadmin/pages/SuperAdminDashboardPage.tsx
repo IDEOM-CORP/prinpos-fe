@@ -18,7 +18,7 @@ export default function SuperAdminDashboardPage() {
       title: "Total Bisnis",
       value: businesses.length,
       icon: IconBuilding,
-      color: "blue",
+      color: "aqua",
     },
     {
       title: "Total Cabang",

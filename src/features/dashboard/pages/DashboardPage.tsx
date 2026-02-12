@@ -80,7 +80,7 @@ export default function DashboardPage() {
             title="Total Orders"
             value={totalOrders}
             icon={<IconFileText size={30} />}
-            color="blue"
+            color="aqua"
           />
         </Grid.Col>
 

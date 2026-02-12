@@ -141,7 +141,7 @@ export default function UsersPage() {
       case "owner":
         return "red";
       case "kasir":
-        return "blue";
+        return "aqua";
       case "produksi":
         return "green";
       default:

@@ -46,7 +46,7 @@ export default function OrderDetailPage() {
       case "pending":
         return "orange";
       case "in-progress":
-        return "blue";
+        return "aqua";
       case "completed":
         return "green";
       case "cancelled":
@@ -122,7 +122,7 @@ export default function OrderDetailPage() {
                       key={idx}
                       justify="space-between"
                       p="md"
-                      style={{ background: "#f8f9fa", borderRadius: 8 }}
+                      style={{ background: "#FAF5EE", borderRadius: 8 }}
                     >
                       <div style={{ flex: 1 }}>
                         <Text fw={500}>{item.name}</Text>
@@ -178,7 +178,7 @@ export default function OrderDetailPage() {
                   <Text fw={700} size="lg">
                     Total:
                   </Text>
-                  <Text fw={700} size="xl" c="blue">
+                  <Text fw={700} size="xl" c="aqua">
                     {formatCurrency(order.total)}
                   </Text>
                 </Group>

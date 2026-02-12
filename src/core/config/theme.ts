@@ -1,22 +1,22 @@
 import { createTheme, MantineColorsTuple } from "@mantine/core";
 
 const primaryColor: MantineColorsTuple = [
-  "#e3f2fd",
-  "#bbdefb",
-  "#90caf9",
-  "#64b5f6",
-  "#42a5f5",
-  "#2196f3",
-  "#1e88e5",
-  "#1976d2",
-  "#1565c0",
-  "#0d47a1",
+  "#e8f7f6",
+  "#c5ece9",
+  "#9eddd9",
+  "#72cec8",
+  "#4bbfb9",
+  "#31a8a3",
+  "#278783",
+  "#1f6c69",
+  "#175250",
+  "#0e3736",
 ];
 
 export const theme = createTheme({
-  primaryColor: "blue",
+  primaryColor: "aqua",
   colors: {
-    blue: primaryColor,
+    aqua: primaryColor,
   },
   fontFamily:
     '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
