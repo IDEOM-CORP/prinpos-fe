@@ -70,7 +70,7 @@ export default function SuperAdminLoginPage() {
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
-        background: "linear-gradient(135deg, #667eea 0%, #764ba2 100%)",
+        background: "linear-gradient(135deg, #1f6c69 0%, #0e3736 100%)",
       }}
     >
       <Container size={420} my={40}>
@@ -85,7 +85,7 @@ export default function SuperAdminLoginPage() {
             >
               {APP_NAME}
             </Title>
-            <Badge size="lg" color="red" variant="filled">
+            <Badge size="lg" color="dark" variant="filled">
               Internal Admin Portal
             </Badge>
           </Stack>
@@ -129,7 +129,7 @@ export default function SuperAdminLoginPage() {
                 fullWidth
                 size="md"
                 loading={loading}
-                color="red"
+                color="aqua"
               >
                 Login
               </Button>
