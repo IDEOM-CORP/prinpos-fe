@@ -17,6 +17,9 @@ export const ROUTES = {
   ORDERS: "/orders",
   ORDER_DETAIL: "/orders/:id",
 
+  // Categories
+  CATEGORIES: "/categories",
+
   // Items
   ITEMS: "/items",
 
@@ -29,6 +32,9 @@ export const ROUTES = {
 
   // Reports
   REPORTS: "/reports",
+
+  // Profile
+  PROFILE: "/profile",
 
   // Admin (Internal)
   ADMIN_LOGIN: "/admin/login",

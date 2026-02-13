@@ -55,7 +55,16 @@ export default function LoginPage() {
     const result = await login(values.email, values.password);
 
     if (result.success) {
-      navigate(ROUTES.DASHBOARD);
+      const currentUser = useAuthStore.getState().user;
+      const role = currentUser?.role;
+
+      if (role === "kasir") {
+        navigate(ROUTES.CASHIER);
+      } else if (role === "produksi") {
+        navigate(ROUTES.PRODUCTION);
+      } else {
+        navigate(ROUTES.DASHBOARD);
+      }
     } else {
       setError(result.message || "Login gagal");
     }

@@ -24,6 +24,7 @@ import {
   IconUser,
   IconLayoutSidebar,
   IconLayoutSidebarLeftCollapse,
+  IconCategory,
 } from "@tabler/icons-react";
 import { useAuthStore } from "../shared/stores/authStore";
 import { ROUTES } from "../core/routes";
@@ -75,6 +76,12 @@ export default function MainLayout({ children }: MainLayoutProps) {
       icon: IconBox,
       path: ROUTES.ITEMS,
       roles: ["owner"], // Only owner manages items
+    },
+    {
+      label: "Kategori",
+      icon: IconCategory,
+      path: ROUTES.CATEGORIES,
+      roles: ["owner"], // Only owner manages categories
     },
     {
       label: "Laporan",
@@ -155,7 +162,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
               <Menu.Divider />
               <Menu.Item
                 leftSection={<IconUser size={16} />}
-                onClick={() => navigate(ROUTES.DASHBOARD)}
+                onClick={() => navigate(ROUTES.PROFILE)}
               >
                 Profile
               </Menu.Item>

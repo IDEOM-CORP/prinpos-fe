@@ -10,7 +10,19 @@ export type PaymentType = "full" | "dp" | "installment";
 
 export type PaymentStatus = "unpaid" | "partial" | "paid";
 
-export type PricingModel = "fixed" | "area" | "quantity";
+export type PricingModel = "fixed" | "area" | "tiered";
+
+export interface TierPrice {
+  minQty: number;
+  maxQty: number | null; // null = unlimited
+  price: number;
+}
+
+export interface FinishingOption {
+  id: string;
+  name: string;
+  price: number; // additional price
+}
 
 export interface User {
   id: string;
@@ -43,19 +55,48 @@ export interface Branch {
   createdAt: string;
 }
 
+export interface Category {
+  id: string;
+  name: string;
+  description?: string;
+  businessId: string;
+  createdAt: string;
+}
+
 export interface Item {
   id: string;
   name: string;
   description: string;
-  price: number;
-  pricePerSqm?: number; // For area-based pricing
-  pricingModel: PricingModel; // How this product is priced
   category: string;
-  stock: number;
-  unit?: string; // 'meter', 'pcs', 'box', etc.
   imageUrl: string;
   businessId: string;
   createdAt: string;
+
+  // Pricing
+  pricingModel: PricingModel;
+  price: number; // base price (fixed: per unit, area: per m²)
+  pricePerSqm?: number; // alias for area pricing (backward compat)
+  tiers?: TierPrice[]; // tiered pricing tiers
+
+  // Unit & measurement
+  unit: string; // 'pcs', 'box', 'lembar', 'meter', 'paket', etc.
+  areaUnit?: "m" | "cm"; // meter or centimeter for area-based
+
+  // Finishing add-ons (available options for this product)
+  finishingOptions?: FinishingOption[];
+
+  // Material options (available for this product)
+  materialOptions?: string[];
+
+  // Order constraints
+  minOrder?: number; // minimum order qty
+  setupFee?: number; // one-time setup/design fee
+
+  // Pricing controls
+  maxDiscount?: number; // max discount % allowed (0-100)
+
+  // Status
+  isActive: boolean;
 }
 
 export interface OrderItem {

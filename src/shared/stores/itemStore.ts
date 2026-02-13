@@ -11,7 +11,6 @@ interface ItemStore {
   updateItem: (id: string, updates: Partial<Item>) => void;
   deleteItem: (id: string) => void;
   getItemById: (id: string) => Item | undefined;
-  updateStock: (id: string, quantity: number) => void;
 }
 
 export const useItemStore = create<ItemStore>()(
@@ -22,10 +21,16 @@ export const useItemStore = create<ItemStore>()(
       initializeItems: () => {
         const currentItems = get().items;
 
-        // Check if items need migration (missing pricingModel field)
+        // Check if items need migration (missing isActive or finishingOptions field)
         const needsMigration =
           currentItems.length > 0 &&
-          currentItems.some((item) => !item.pricingModel);
+          currentItems.some(
+            (item) =>
+              !item.pricingModel ||
+              item.isActive === undefined ||
+              (item as unknown as Record<string, unknown>)["stock"] !==
+                undefined,
+          );
 
         if (currentItems.length === 0 || needsMigration) {
           console.log("Initializing items with new data structure...");
@@ -59,14 +64,6 @@ export const useItemStore = create<ItemStore>()(
 
       getItemById: (id) => {
         return get().items.find((item) => item.id === id);
-      },
-
-      updateStock: (id, quantity) => {
-        set((state) => ({
-          items: state.items.map((item) =>
-            item.id === id ? { ...item, stock: item.stock + quantity } : item,
-          ),
-        }));
       },
     }),
     {

@@ -147,11 +147,55 @@ export const useCartStore = create<CartStore>()(
             cartItem.area &&
             item.pricePerSqm
           ) {
-            // Area-based: area (m²) × price per m² × quantity
+            // Area-based: area × price per area unit × quantity
             itemPrice = cartItem.area * item.pricePerSqm * cartItem.quantity;
+          } else if (
+            item.pricingModel === "tiered" &&
+            item.tiers &&
+            item.tiers.length > 0
+          ) {
+            // Tiered: find tier for current quantity
+            let unitPrice = item.price;
+            for (const tier of item.tiers) {
+              if (
+                cartItem.quantity >= tier.minQty &&
+                (tier.maxQty === null || cartItem.quantity <= tier.maxQty)
+              ) {
+                unitPrice = tier.price;
+                break;
+              }
+            }
+            // Fallback to last tier if qty exceeds all
+            const lastTier = item.tiers[item.tiers.length - 1];
+            if (lastTier && lastTier.maxQty === null) {
+              if (cartItem.quantity >= lastTier.minQty) {
+                unitPrice = lastTier.price;
+              }
+            }
+            itemPrice = unitPrice * cartItem.quantity;
           } else {
-            // Fixed or quantity-based: price × quantity
+            // Fixed: price × quantity
             itemPrice = item.price * cartItem.quantity;
+          }
+
+          // Add finishing costs
+          if (
+            cartItem.finishing &&
+            cartItem.finishing.length > 0 &&
+            item.finishingOptions
+          ) {
+            const finishingCost = cartItem.finishing.reduce((sum, fName) => {
+              const opt = item.finishingOptions?.find(
+                (fo) => fo.name === fName,
+              );
+              return sum + (opt?.price || 0);
+            }, 0);
+            itemPrice += finishingCost * cartItem.quantity;
+          }
+
+          // Add setup fee (one-time per item type)
+          if (item.setupFee) {
+            itemPrice += item.setupFee;
           }
 
           return total + itemPrice;

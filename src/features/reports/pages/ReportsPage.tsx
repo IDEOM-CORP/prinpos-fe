@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   Grid,
   Card,
@@ -7,6 +8,7 @@ import {
   Stack,
   Title,
   Table,
+  Select,
 } from "@mantine/core";
 import {
   IconFileText,
@@ -17,7 +19,9 @@ import {
 } from "@tabler/icons-react";
 import { useOrderStore } from "../../../shared/stores/orderStore";
 import { useItemStore } from "../../../shared/stores/itemStore";
+import { useBusinessStore } from "../../../shared/stores/businessStore";
 import { formatCurrency, formatDate } from "../../../shared/utils";
+import { IconBuildingStore } from "@tabler/icons-react";
 
 interface StatCardProps {
   title: string;
@@ -53,8 +57,21 @@ function StatCard({ title, value, icon, color, subtitle }: StatCardProps) {
 }
 
 export default function ReportsPage() {
-  const orders = useOrderStore((state) => state.orders);
+  const allOrders = useOrderStore((state) => state.orders);
   const items = useItemStore((state) => state.items);
+  const branches = useBusinessStore((state) => state.branches);
+  const [selectedBranchId, setSelectedBranchId] = useState("");
+
+  // Branch options for filter
+  const branchOptions = [
+    { value: "", label: "Semua Cabang" },
+    ...branches.map((b) => ({ value: b.id, label: b.name })),
+  ];
+
+  // Filter by branch
+  const orders = selectedBranchId
+    ? allOrders.filter((o) => o.branchId === selectedBranchId)
+    : allOrders;
 
   // Total orders
   const totalOrders = orders.length;
@@ -111,14 +128,22 @@ export default function ReportsPage() {
     )
     .slice(0, 10);
 
-  // Low stock items
-  const lowStockItems = items.filter((item) => item.stock < 10).slice(0, 10);
-
   return (
     <>
-      <Title order={2} mb="xl">
-        Laporan & Statistik
-      </Title>
+      <Group justify="space-between" mb="xl">
+        <Title order={2}>Laporan & Statistik</Title>
+        <Select
+          placeholder="Semua Cabang"
+          data={branchOptions}
+          value={selectedBranchId}
+          onChange={(value) => setSelectedBranchId(value || "")}
+          leftSection={<IconBuildingStore size={16} />}
+          size="sm"
+          style={{ width: 220 }}
+          clearable={false}
+          allowDeselect={false}
+        />
+      </Group>
 
       <Grid mb="xl">
         <Grid.Col span={{ base: 12, sm: 6, md: 4 }}>
@@ -175,7 +200,6 @@ export default function ReportsPage() {
             value={items.length}
             icon={<IconFileText size={30} />}
             color="pink"
-            subtitle={`${lowStockItems.length} stok rendah`}
           />
         </Grid.Col>
       </Grid>
@@ -213,48 +237,6 @@ export default function ReportsPage() {
                       <Table.Td>
                         <Text size="sm" fw={500}>
                           {formatCurrency(item.revenue)}
-                        </Text>
-                      </Table.Td>
-                    </Table.Tr>
-                  ))}
-                </Table.Tbody>
-              </Table>
-            )}
-          </Card>
-        </Grid.Col>
-
-        <Grid.Col span={{ base: 12, md: 6 }}>
-          <Card shadow="sm" padding="lg" radius="md" withBorder>
-            <Title order={3} mb="md">
-              Stok Rendah ({"<"} 10)
-            </Title>
-            {lowStockItems.length === 0 ? (
-              <Text c="dimmed" ta="center" py="xl">
-                Semua produk stok aman
-              </Text>
-            ) : (
-              <Table>
-                <Table.Thead>
-                  <Table.Tr>
-                    <Table.Th>Produk</Table.Th>
-                    <Table.Th>Stok</Table.Th>
-                  </Table.Tr>
-                </Table.Thead>
-                <Table.Tbody>
-                  {lowStockItems.map((item) => (
-                    <Table.Tr key={item.id}>
-                      <Table.Td>
-                        <Text size="sm" fw={500}>
-                          {item.name}
-                        </Text>
-                      </Table.Td>
-                      <Table.Td>
-                        <Text
-                          size="sm"
-                          c={item.stock === 0 ? "red" : "orange"}
-                          fw={500}
-                        >
-                          {item.stock}
                         </Text>
                       </Table.Td>
                     </Table.Tr>

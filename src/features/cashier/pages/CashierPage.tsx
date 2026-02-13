@@ -18,9 +18,7 @@ import {
   Select,
   NumberInput,
   Radio,
-  Menu,
-  ActionIcon,
-  Avatar,
+  Badge,
 } from "@mantine/core";
 import { DateInput } from "@mantine/dates";
 import { useForm } from "@mantine/form";
@@ -30,23 +28,24 @@ import {
   IconSearch,
   IconReceipt,
   IconCalendar,
-  IconLogout,
-  IconDashboard,
-  IconArrowLeft,
+  IconRulerMeasure,
+  IconTag,
+  IconChartBar,
 } from "@tabler/icons-react";
-import { useNavigate } from "react-router-dom";
 import type { Item } from "../../../shared/types";
 import { useItemStore } from "../../../shared/stores/itemStore";
 import { useCartStore } from "../../../shared/stores/cartStore";
 import { useOrderStore } from "../../../shared/stores/orderStore";
 import { useAuthStore } from "../../../shared/stores/authStore";
 import { formatCurrency } from "../../../shared/utils";
-import { TAX_RATE, ITEM_CATEGORIES, APP_NAME } from "../../../shared/constants";
-import { ROUTES } from "../../../core/routes";
+import { TAX_RATE } from "../../../shared/constants";
 import CartItemCard from "../components/CartItemCard";
 import AddProductModal from "../components/AddProductModal";
+import { useCategoryStore } from "../../../shared/stores/categoryStore";
 
 export default function CashierPage() {
+  const categories = useCategoryStore((state) => state.categories);
+  const categoryNames = categories.map((c) => c.name);
   const items = useItemStore((state) => state.items);
   const cart = useCartStore((state) => state.items);
   const addToCart = useCartStore((state) => state.addItem);
@@ -60,8 +59,6 @@ export default function CashierPage() {
   const getItemCount = useCartStore((state) => state.getItemCount);
   const addOrder = useOrderStore((state) => state.addOrder);
   const user = useAuthStore((state) => state.user);
-  const logout = useAuthStore((state) => state.logout);
-  const navigate = useNavigate();
 
   const [checkoutOpened, { open: openCheckout, close: closeCheckout }] =
     useDisclosure(false);
@@ -99,6 +96,7 @@ export default function CashierPage() {
   });
 
   const filteredItems = items.filter((item) => {
+    if (!item.isActive) return false;
     const matchesSearch = item.name
       .toLowerCase()
       .includes(search.toLowerCase());
@@ -112,21 +110,19 @@ export default function CashierPage() {
   const total = subtotal + tax;
 
   const handleProductClick = (item: Item) => {
-    if (item.stock <= 0) return;
+    // Area-based and tiered products need the modal for input
+    const needsModal =
+      item.pricingModel === "area" ||
+      item.pricingModel === "tiered" ||
+      (item.finishingOptions && item.finishingOptions.length > 0) ||
+      (item.materialOptions && item.materialOptions.length > 0);
 
-    // Check if area-based product
-    if (item.pricingModel === "area" || item.pricePerSqm) {
-      // Area-based products need dimensions input
+    if (needsModal) {
       setSelectedProduct(item);
       openProductModal();
     } else {
-      // Fixed price products can be added directly
+      // Simple fixed price products can be added directly
       addToCart(item);
-      // notifications.show({
-      //   title: "Ditambahkan ke keranjang",
-      //   message: `${item.name} berhasil ditambahkan`,
-      //   color: "green",
-      // });
     }
   };
 
@@ -205,13 +201,6 @@ export default function CashierPage() {
       notes: values.notes,
     });
 
-    // Update stock (only for non-area-based items)
-    cart.forEach((c) => {
-      if (c.item.pricingModel !== "area") {
-        useItemStore.getState().updateStock(c.item.id, -c.quantity);
-      }
-    });
-
     notifications.show({
       title: "Order Berhasil",
       message: `Order ${order.orderNumber} telah dibuat${paymentType === "dp" ? " dengan DP " + formatCurrency(downPayment) : ""}`,
@@ -223,85 +212,21 @@ export default function CashierPage() {
     closeCheckout();
   };
 
-  const handleLogout = () => {
-    logout();
-    navigate(ROUTES.LOGIN);
-  };
-
   return (
     <Box
       style={{
         display: "flex",
         flexDirection: "column",
-        height: "100vh",
+        height: "calc(100vh - 60px - 2 * var(--mantine-spacing-md))",
         overflow: "hidden",
+        margin: "calc(-1 * var(--mantine-spacing-md))",
       }}
     >
-      {/* Fullscreen Header */}
-      <Box
-        style={{
-          height: "60px",
-          borderBottom: "1px solid var(--mantine-color-gray-3)",
-          background: "white",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          padding: "0 1rem",
-        }}
-      >
-        <Group gap="sm">
-          <ActionIcon
-            variant="subtle"
-            size="lg"
-            onClick={() => navigate(ROUTES.DASHBOARD)}
-            title="Kembali ke Dashboard"
-          >
-            <IconArrowLeft size={24} />
-          </ActionIcon>
-          <Text size="xl" fw={700} c="aqua">
-            {APP_NAME} - Kasir
-          </Text>
-        </Group>
-
-        <Menu shadow="md" width={200}>
-          <Menu.Target>
-            <ActionIcon variant="subtle" size="lg">
-              <Avatar size="sm" radius="xl" color="aqua">
-                {user?.name.charAt(0).toUpperCase()}
-              </Avatar>
-            </ActionIcon>
-          </Menu.Target>
-
-          <Menu.Dropdown>
-            <Menu.Label>
-              {user?.name}
-              <Text size="xs" c="dimmed">
-                {user?.role}
-              </Text>
-            </Menu.Label>
-            <Menu.Divider />
-            <Menu.Item
-              leftSection={<IconDashboard size={16} />}
-              onClick={() => navigate(ROUTES.DASHBOARD)}
-            >
-              Dashboard
-            </Menu.Item>
-            <Menu.Item
-              leftSection={<IconLogout size={16} />}
-              color="red"
-              onClick={handleLogout}
-            >
-              Logout
-            </Menu.Item>
-          </Menu.Dropdown>
-        </Menu>
-      </Box>
-
       {/* Main Cashier Content */}
       <Box
         style={{
           display: "flex",
-          height: "calc(100vh - 60px)",
+          flex: 1,
           gap: 0,
           overflow: "hidden",
         }}
@@ -341,7 +266,7 @@ export default function CashierPage() {
             >
               <Tabs.List>
                 <Tabs.Tab value="Semua">Semua</Tabs.Tab>
-                {ITEM_CATEGORIES.map((category) => (
+                {categoryNames.map((category) => (
                   <Tabs.Tab key={category} value={category}>
                     {category}
                   </Tabs.Tab>
@@ -372,10 +297,11 @@ export default function CashierPage() {
                     withBorder
                     style={{
                       cursor: "pointer",
-                      height: "250px",
+                      height: "280px",
                       display: "flex",
                       flexDirection: "column",
                       position: "relative",
+                      borderLeft: `3px solid var(--mantine-color-${item.pricingModel === "area" ? "orange" : item.pricingModel === "tiered" ? "violet" : "aqua"}-5)`,
                     }}
                     onClick={() => handleProductClick(item)}
                   >
@@ -425,11 +351,42 @@ export default function CashierPage() {
                       >
                         {item.name}
                       </Text>
+                      {item.pricingModel === "area" ? (
+                        <Badge
+                          size="xs"
+                          variant="light"
+                          color="orange"
+                          leftSection={<IconRulerMeasure size={10} />}
+                        >
+                          Perlu Ukuran
+                        </Badge>
+                      ) : item.pricingModel === "tiered" ? (
+                        <Badge
+                          size="xs"
+                          variant="light"
+                          color="violet"
+                          leftSection={<IconChartBar size={10} />}
+                        >
+                          Bertingkat
+                        </Badge>
+                      ) : (
+                        <Badge
+                          size="xs"
+                          variant="light"
+                          color="aqua"
+                          leftSection={<IconTag size={10} />}
+                        >
+                          Harga Tetap
+                        </Badge>
+                      )}
                       <Text size="lg" fw={700} c="aqua">
-                        {formatCurrency(item.price)}
-                      </Text>
-                      <Text size="xs" c={item.stock > 0 ? "dimmed" : "red"}>
-                        {item.stock > 0 ? `Stok: ${item.stock}` : "Habis"}
+                        {item.pricingModel === "area" && item.pricePerSqm
+                          ? `${formatCurrency(item.pricePerSqm)}/${item.areaUnit === "cm" ? "cm²" : "m²"}`
+                          : item.pricingModel === "tiered" &&
+                              item.tiers &&
+                              item.tiers.length > 0
+                            ? `dari ${formatCurrency(Math.min(...item.tiers.map((t) => t.price)))}`
+                            : formatCurrency(item.price)}
                       </Text>
                     </Stack>
                   </Card>

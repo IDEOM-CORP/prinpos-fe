@@ -1,4 +1,4 @@
-import { Navigate, Outlet, useLocation } from "react-router-dom";
+import { Navigate, Outlet } from "react-router-dom";
 import { useAuthStore } from "../stores/authStore";
 import { ROUTES } from "../../core/routes";
 import MainLayout from "../../layouts/MainLayout";
@@ -14,10 +14,6 @@ export default function ProtectedRoute({
   isSuperAdmin = false,
 }: ProtectedRouteProps) {
   const { isAuthenticated, user } = useAuthStore();
-  const location = useLocation();
-
-  // CashierPage runs in fullscreen mode without layout
-  const isFullscreenRoute = location.pathname === ROUTES.CASHIER;
 
   // Superadmin routes require superadmin authentication
   if (isSuperAdmin) {
@@ -43,12 +39,14 @@ export default function ProtectedRoute({
   }
 
   if (allowedRoles && user && !allowedRoles.includes(user.role)) {
+    // Redirect to role-appropriate default page
+    if (user.role === "kasir") {
+      return <Navigate to={ROUTES.CASHIER} replace />;
+    }
+    if (user.role === "produksi") {
+      return <Navigate to={ROUTES.PRODUCTION} replace />;
+    }
     return <Navigate to={ROUTES.DASHBOARD} replace />;
-  }
-
-  // Fullscreen routes (Cashier) render without MainLayout
-  if (isFullscreenRoute) {
-    return <Outlet />;
   }
 
   return (

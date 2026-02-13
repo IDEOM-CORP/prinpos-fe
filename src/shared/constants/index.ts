@@ -81,8 +81,26 @@ export const PAYMENT_STATUSES = {
 export const PRICING_MODELS = {
   FIXED: "fixed", // Fixed price per unit (e.g., business cards)
   AREA: "area", // Price per m² (e.g., banner, spanduk)
-  QUANTITY: "quantity", // Price per quantity (e.g., stickers in bulk)
+  TIERED: "tiered", // Tiered pricing by quantity (e.g., brosur bulk)
 } as const;
+
+// Unit options
+export const UNIT_OPTIONS = [
+  "pcs",
+  "lembar",
+  "box",
+  "rim",
+  "paket",
+  "meter",
+  "roll",
+  "set",
+];
+
+// Area unit options
+export const AREA_UNIT_OPTIONS = [
+  { value: "m", label: "Meter (m²)" },
+  { value: "cm", label: "Centimeter (cm²)" },
+];
 
 // Material options for digital printing
 export const MATERIALS = [

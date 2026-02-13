@@ -2,7 +2,6 @@ import { useState } from "react";
 import {
   Table,
   Badge,
-  Button,
   Title,
   Group,
   TextInput,
@@ -15,18 +14,32 @@ import { useNavigate } from "react-router-dom";
 import { IconEye, IconSearch } from "@tabler/icons-react";
 import { useOrderStore } from "../../../shared/stores/orderStore";
 import { useUserStore } from "../../../shared/stores/userStore";
+import { useAuthStore } from "../../../shared/stores/authStore";
+import { useBusinessStore } from "../../../shared/stores/businessStore";
 import { formatCurrency, formatDateTime } from "../../../shared/utils";
+import { IconBuildingStore } from "@tabler/icons-react";
 import { ROUTES } from "../../../core/routes";
 import type { Order } from "../../../shared/types";
 
 export default function OrdersPage() {
   const navigate = useNavigate();
-  const orders = useOrderStore((state) => state.orders);
+  const allOrders = useOrderStore((state) => state.orders);
   const users = useUserStore((state) => state.users);
+  const user = useAuthStore((state) => state.user);
+  const branches = useBusinessStore((state) => state.branches);
+  const [selectedBranchId, setSelectedBranchId] = useState("");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
 
-  const filteredOrders = orders.filter((order) => {
+  // Branch filter: owner uses global filter, others see their branch only
+  const branchFilteredOrders =
+    user?.role === "owner" && selectedBranchId
+      ? allOrders.filter((o) => o.branchId === selectedBranchId)
+      : user?.role !== "owner"
+        ? allOrders.filter((o) => o.branchId === user?.branchId)
+        : allOrders;
+
+  const filteredOrders = branchFilteredOrders.filter((order) => {
     const matchesSearch =
       order.orderNumber.toLowerCase().includes(search.toLowerCase()) ||
       order.customerName.toLowerCase().includes(search.toLowerCase());
@@ -67,9 +80,27 @@ export default function OrdersPage() {
 
   return (
     <>
-      <Title order={2} mb="xl">
-        Daftar Orders
-      </Title>
+      <Group justify="space-between" align="center" mb="xl">
+        <Title order={2}>Daftar Orders</Title>
+        {user?.role === "owner" && (
+          <Select
+            placeholder="Semua Cabang"
+            data={[
+              { value: "", label: "Semua Cabang" },
+              ...branches
+                .filter((b) => user && b.businessId === user.businessId)
+                .map((b) => ({ value: b.id, label: b.name })),
+            ]}
+            value={selectedBranchId}
+            onChange={(value) => setSelectedBranchId(value || "")}
+            leftSection={<IconBuildingStore size={16} />}
+            size="sm"
+            style={{ width: 220 }}
+            clearable={false}
+            allowDeselect={false}
+          />
+        )}
+      </Group>
 
       <Card shadow="sm" padding="lg" radius="md" withBorder mb="xl">
         <Group>

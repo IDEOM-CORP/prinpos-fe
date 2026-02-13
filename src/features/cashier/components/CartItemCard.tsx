@@ -19,7 +19,6 @@ import {
 } from "@tabler/icons-react";
 import type { CartItem } from "../../../shared/types";
 import { formatCurrency } from "../../../shared/utils";
-import { MATERIALS, FINISHING_OPTIONS } from "../../../shared/constants";
 
 interface CartItemCardProps {
   cartItem: CartItem;
@@ -43,10 +42,33 @@ export default function CartItemCard({
   const [height, setHeight] = useState(cartItem.height || 0);
 
   const isAreaBased = cartItem.item.pricingModel === "area";
+  const hasOptions =
+    isAreaBased ||
+    (cartItem.item.materialOptions &&
+      cartItem.item.materialOptions.length > 0) ||
+    (cartItem.item.finishingOptions &&
+      cartItem.item.finishingOptions.length > 0);
 
   const calculateItemTotal = () => {
     if (isAreaBased && cartItem.area && cartItem.item.pricePerSqm) {
       return cartItem.area * cartItem.item.pricePerSqm * cartItem.quantity;
+    }
+    if (
+      cartItem.item.pricingModel === "tiered" &&
+      cartItem.item.tiers &&
+      cartItem.item.tiers.length > 0
+    ) {
+      let unitPrice = cartItem.item.price;
+      for (const tier of cartItem.item.tiers) {
+        if (
+          cartItem.quantity >= tier.minQty &&
+          (tier.maxQty === null || cartItem.quantity <= tier.maxQty)
+        ) {
+          unitPrice = tier.price;
+          break;
+        }
+      }
+      return unitPrice * cartItem.quantity;
     }
     return cartItem.item.price * cartItem.quantity;
   };
@@ -82,7 +104,7 @@ export default function CartItemCard({
           )}
         </Stack>
         <Group gap="xs">
-          {isAreaBased && (
+          {hasOptions && (
             <ActionIcon
               variant="subtle"
               size="sm"
@@ -136,26 +158,33 @@ export default function CartItemCard({
               Update Ukuran
             </Button>
           )}
-          {onUpdateMaterial && (
-            <Select
-              label="Material"
-              data={MATERIALS}
-              value={cartItem.material}
-              onChange={(val) => val && onUpdateMaterial(val)}
-              size="xs"
-              searchable
-            />
-          )}
-          {onUpdateFinishing && (
-            <MultiSelect
-              label="Finishing"
-              data={FINISHING_OPTIONS}
-              value={cartItem.finishing || []}
-              onChange={(val) => onUpdateFinishing(val)}
-              size="xs"
-              searchable
-            />
-          )}
+          {onUpdateMaterial &&
+            cartItem.item.materialOptions &&
+            cartItem.item.materialOptions.length > 0 && (
+              <Select
+                label="Material"
+                data={cartItem.item.materialOptions}
+                value={cartItem.material}
+                onChange={(val) => val && onUpdateMaterial(val)}
+                size="xs"
+                searchable
+              />
+            )}
+          {onUpdateFinishing &&
+            cartItem.item.finishingOptions &&
+            cartItem.item.finishingOptions.length > 0 && (
+              <MultiSelect
+                label="Finishing"
+                data={cartItem.item.finishingOptions.map((fo) => ({
+                  value: fo.name,
+                  label: `${fo.name} (+${formatCurrency(fo.price)})`,
+                }))}
+                value={cartItem.finishing || []}
+                onChange={(val) => onUpdateFinishing(val)}
+                size="xs"
+                searchable
+              />
+            )}
         </Stack>
       </Collapse>
 
@@ -179,7 +208,6 @@ export default function CartItemCard({
             variant="filled"
             size="sm"
             onClick={() => onUpdateQuantity(cartItem.quantity + 1)}
-            disabled={cartItem.quantity >= cartItem.item.stock}
           >
             <IconPlus size={14} />
           </ActionIcon>

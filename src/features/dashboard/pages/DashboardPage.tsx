@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   Grid,
   Card,
@@ -6,6 +7,7 @@ import {
   ThemeIcon,
   Stack,
   Title,
+  Select,
 } from "@mantine/core";
 import {
   IconShoppingCart,
@@ -19,7 +21,9 @@ import { useAuthStore } from "../../../shared/stores/authStore";
 import { useOrderStore } from "../../../shared/stores/orderStore";
 import { useItemStore } from "../../../shared/stores/itemStore";
 import { useUserStore } from "../../../shared/stores/userStore";
+import { useBusinessStore } from "../../../shared/stores/businessStore";
 import { formatCurrency } from "../../../shared/utils";
+import { IconBuildingStore } from "@tabler/icons-react";
 
 interface StatCardProps {
   title: string;
@@ -50,9 +54,28 @@ function StatCard({ title, value, icon, color }: StatCardProps) {
 
 export default function DashboardPage() {
   const user = useAuthStore((state) => state.user);
-  const orders = useOrderStore((state) => state.orders);
+  const allOrders = useOrderStore((state) => state.orders);
   const items = useItemStore((state) => state.items);
-  const users = useUserStore((state) => state.users);
+  const allUsers = useUserStore((state) => state.users);
+  const branches = useBusinessStore((state) => state.branches);
+  const [selectedBranchId, setSelectedBranchId] = useState("");
+
+  // Branch options for filter
+  const userBranches = branches.filter(
+    (b) => user && b.businessId === user.businessId,
+  );
+  const branchOptions = [
+    { value: "", label: "Semua Cabang" },
+    ...userBranches.map((b) => ({ value: b.id, label: b.name })),
+  ];
+
+  // Filter by branch
+  const orders = selectedBranchId
+    ? allOrders.filter((o) => o.branchId === selectedBranchId)
+    : allOrders;
+  const users = selectedBranchId
+    ? allUsers.filter((u) => u.branchId === selectedBranchId)
+    : allUsers;
 
   const totalOrders = orders.length;
   const pendingOrders = orders.filter((o) => o.status === "pending").length;
@@ -66,9 +89,20 @@ export default function DashboardPage() {
 
   return (
     <>
-      <Title order={2} mb="xl">
-        Dashboard
-      </Title>
+      <Group justify="space-between" mb="xs">
+        <Title order={2}>Dashboard</Title>
+        <Select
+          placeholder="Semua Cabang"
+          data={branchOptions}
+          value={selectedBranchId}
+          onChange={(value) => setSelectedBranchId(value || "")}
+          leftSection={<IconBuildingStore size={16} />}
+          size="sm"
+          style={{ width: 220 }}
+          clearable={false}
+          allowDeselect={false}
+        />
+      </Group>
 
       <Text size="lg" mb="xl">
         Selamat datang, <strong>{user?.name}</strong>!
