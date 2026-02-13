@@ -18,10 +18,13 @@ export interface TierPrice {
   price: number;
 }
 
+export type FinishingPricingType = "per_unit" | "per_area" | "flat";
+
 export interface FinishingOption {
   id: string;
   name: string;
   price: number; // additional price
+  pricingType: FinishingPricingType; // per_unit = per pcs, per_area = per m², flat = one-time
 }
 
 export interface User {
@@ -72,15 +75,21 @@ export interface Item {
   businessId: string;
   createdAt: string;
 
+  // Identity
+  sku?: string; // unique product code / SKU
+
   // Pricing
   pricingModel: PricingModel;
   price: number; // base price (fixed: per unit, area: per m²)
   pricePerSqm?: number; // alias for area pricing (backward compat)
   tiers?: TierPrice[]; // tiered pricing tiers
+  costPrice?: number; // harga modal / cost price for margin calc
 
   // Unit & measurement
   unit: string; // 'pcs', 'box', 'lembar', 'meter', 'paket', etc.
   areaUnit?: "m" | "cm"; // meter or centimeter for area-based
+  defaultWidth?: number; // default width for area-based (template)
+  defaultHeight?: number; // default height for area-based (template)
 
   // Finishing add-ons (available options for this product)
   finishingOptions?: FinishingOption[];
@@ -94,6 +103,10 @@ export interface Item {
 
   // Pricing controls
   maxDiscount?: number; // max discount % allowed (0-100)
+
+  // Production
+  productionDays?: number; // estimated production days
+  notes?: string; // internal notes for production team
 
   // Status
   isActive: boolean;

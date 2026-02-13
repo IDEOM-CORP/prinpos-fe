@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import {
   Title,
   Button,
@@ -22,6 +22,7 @@ import {
   Divider,
   ScrollArea,
   Tooltip,
+  ThemeIcon,
 } from "@mantine/core";
 import { useForm } from "@mantine/form";
 import { useDisclosure } from "@mantine/hooks";
@@ -37,6 +38,10 @@ import {
   IconChartBar,
   IconSettings,
   IconX,
+  IconBarcode,
+  IconClock,
+  IconReceipt,
+  IconPercentage,
 } from "@tabler/icons-react";
 import { useItemStore } from "../../../shared/stores/itemStore";
 import { useAuthStore } from "../../../shared/stores/authStore";
@@ -46,30 +51,38 @@ import {
   UNIT_OPTIONS,
   AREA_UNIT_OPTIONS,
   MATERIALS,
+  FINISHING_PRICING_TYPES,
 } from "../../../shared/constants";
 import { useCategoryStore } from "../../../shared/stores/categoryStore";
 import type {
   TierPrice,
   FinishingOption,
+  FinishingPricingType,
   PricingModel,
 } from "../../../shared/types";
 
 interface FormValues {
   name: string;
+  sku: string;
   description: string;
   price: number;
   pricePerSqm: number;
+  costPrice: number;
   pricingModel: PricingModel;
   category: string;
   imageUrl: string;
   unit: string;
   areaUnit: "m" | "cm";
+  defaultWidth: number;
+  defaultHeight: number;
   tiers: TierPrice[];
   finishingOptions: FinishingOption[];
   materialOptions: string[];
   minOrder: number;
   setupFee: number;
   maxDiscount: number;
+  productionDays: number;
+  notes: string;
   isActive: boolean;
 }
 
@@ -91,24 +104,32 @@ export default function ItemsPage() {
   // Finishing option temp fields
   const [newFinishName, setNewFinishName] = useState("");
   const [newFinishPrice, setNewFinishPrice] = useState<number>(0);
+  const [newFinishPricingType, setNewFinishPricingType] =
+    useState<FinishingPricingType>("per_unit");
 
   const form = useForm<FormValues>({
     initialValues: {
       name: "",
+      sku: "",
       description: "",
       price: 0,
       pricePerSqm: 0,
+      costPrice: 0,
       pricingModel: "fixed",
       category: "",
       imageUrl: "",
       unit: "pcs",
       areaUnit: "m",
+      defaultWidth: 0,
+      defaultHeight: 0,
       tiers: [{ minQty: 1, maxQty: 10, price: 0 }],
       finishingOptions: [],
       materialOptions: [],
       minOrder: 1,
       setupFee: 0,
       maxDiscount: 100,
+      productionDays: 1,
+      notes: "",
       isActive: true,
     },
     validate: {
@@ -140,20 +161,113 @@ export default function ItemsPage() {
     return matchSearch && matchCategory && matchPricing;
   });
 
+  // --- SKU auto-generate ---
+  const generateSku = () => {
+    const cat = form.values.category || "PRD";
+    const prefix = cat.substring(0, 3).toUpperCase().replace(/\s/g, "");
+    const suffix = String(Date.now()).slice(-4);
+    form.setFieldValue("sku", `${prefix}-${suffix}`);
+  };
+
+  // --- Margin calculation ---
+  const marginPercent = useMemo(() => {
+    const basePrice =
+      form.values.pricingModel === "area"
+        ? form.values.pricePerSqm
+        : form.values.pricingModel === "tiered" && form.values.tiers.length > 0
+          ? form.values.tiers[0].price
+          : form.values.price;
+    if (!basePrice || !form.values.costPrice || form.values.costPrice <= 0)
+      return null;
+    return Math.round(((basePrice - form.values.costPrice) / basePrice) * 100);
+  }, [
+    form.values.price,
+    form.values.pricePerSqm,
+    form.values.tiers,
+    form.values.costPrice,
+    form.values.pricingModel,
+  ]);
+
+  // --- Real-time price simulator ---
+  const priceSimulation = useMemo(() => {
+    const pm = form.values.pricingModel;
+    const qty = 2;
+    let baseUnit = 0;
+    let areaSize = 0;
+
+    if (pm === "fixed") {
+      baseUnit = form.values.price;
+    } else if (pm === "area") {
+      const w = form.values.defaultWidth || 3;
+      const h = form.values.defaultHeight || 1;
+      areaSize = w * h;
+      baseUnit = form.values.pricePerSqm * areaSize;
+    } else if (pm === "tiered" && form.values.tiers.length > 0) {
+      const tier =
+        form.values.tiers.find(
+          (t) => qty >= t.minQty && (t.maxQty === null || qty <= t.maxQty),
+        ) || form.values.tiers[0];
+      baseUnit = tier.price;
+    }
+
+    const subtotal = baseUnit * qty;
+    let finishingTotal = 0;
+    const finishingLines: string[] = [];
+    for (const fo of form.values.finishingOptions) {
+      let fCost = 0;
+      if (fo.pricingType === "per_unit") {
+        fCost = fo.price * qty;
+        finishingLines.push(
+          `${fo.name}: ${formatCurrency(fo.price)} × ${qty} = ${formatCurrency(fCost)}`,
+        );
+      } else if (fo.pricingType === "per_area" && pm === "area") {
+        const area = areaSize || 1;
+        fCost = fo.price * area * qty;
+        finishingLines.push(
+          `${fo.name}: ${formatCurrency(fo.price)}/m² × ${area}m² × ${qty} = ${formatCurrency(fCost)}`,
+        );
+      } else {
+        fCost = fo.price;
+        finishingLines.push(`${fo.name}: ${formatCurrency(fCost)} (flat)`);
+      }
+      finishingTotal += fCost;
+    }
+
+    const setup = form.values.setupFee || 0;
+    const total = subtotal + finishingTotal + setup;
+
+    return { qty, subtotal, finishingLines, finishingTotal, setup, total };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    form.values.pricingModel,
+    form.values.price,
+    form.values.pricePerSqm,
+    form.values.defaultWidth,
+    form.values.defaultHeight,
+    form.values.tiers,
+    form.values.finishingOptions,
+    form.values.setupFee,
+    form.values.unit,
+  ]);
+
   const handleOpenModal = (itemId?: string) => {
     if (itemId) {
       const item = items.find((i) => i.id === itemId);
       if (item) {
         form.setValues({
           name: item.name,
+          sku: item.sku || "",
           description: item.description,
           price: item.price,
           pricePerSqm: item.pricePerSqm || 0,
+          costPrice: item.costPrice || 0,
           pricingModel: item.pricingModel,
           category: item.category,
           imageUrl: item.imageUrl,
           unit: item.unit || "pcs",
           areaUnit: item.areaUnit || "m",
+          defaultWidth: item.defaultWidth || 0,
+          defaultHeight: item.defaultHeight || 0,
           tiers:
             item.tiers && item.tiers.length > 0
               ? item.tiers
@@ -163,6 +277,8 @@ export default function ItemsPage() {
           minOrder: item.minOrder || 1,
           setupFee: item.setupFee || 0,
           maxDiscount: item.maxDiscount ?? 100,
+          productionDays: item.productionDays || 1,
+          notes: item.notes || "",
           isActive: item.isActive ?? true,
         });
         setEditingItem(itemId);
@@ -173,6 +289,7 @@ export default function ItemsPage() {
     }
     setNewFinishName("");
     setNewFinishPrice(0);
+    setNewFinishPricingType("per_unit");
     open();
   };
 
@@ -188,16 +305,26 @@ export default function ItemsPage() {
 
     const itemData = {
       name: values.name,
+      sku: values.sku || undefined,
       description: values.description,
       category: values.category,
       imageUrl: values.imageUrl,
       pricingModel: values.pricingModel,
       price: basePrice,
+      costPrice: values.costPrice > 0 ? values.costPrice : undefined,
       pricePerSqm:
         values.pricingModel === "area" ? values.pricePerSqm : undefined,
       tiers: values.pricingModel === "tiered" ? values.tiers : undefined,
       unit: values.unit,
       areaUnit: values.pricingModel === "area" ? values.areaUnit : undefined,
+      defaultWidth:
+        values.pricingModel === "area" && values.defaultWidth > 0
+          ? values.defaultWidth
+          : undefined,
+      defaultHeight:
+        values.pricingModel === "area" && values.defaultHeight > 0
+          ? values.defaultHeight
+          : undefined,
       finishingOptions:
         values.finishingOptions.length > 0
           ? values.finishingOptions
@@ -207,6 +334,9 @@ export default function ItemsPage() {
       minOrder: values.minOrder,
       setupFee: values.setupFee,
       maxDiscount: values.maxDiscount,
+      productionDays:
+        values.productionDays > 0 ? values.productionDays : undefined,
+      notes: values.notes.trim() || undefined,
       isActive: values.isActive,
     };
 
@@ -286,6 +416,7 @@ export default function ItemsPage() {
       id: `fo-${Date.now()}`,
       name: newFinishName.trim(),
       price: newFinishPrice || 0,
+      pricingType: newFinishPricingType,
     };
     form.setFieldValue("finishingOptions", [
       ...form.values.finishingOptions,
@@ -293,6 +424,7 @@ export default function ItemsPage() {
     ]);
     setNewFinishName("");
     setNewFinishPrice(0);
+    setNewFinishPricingType("per_unit");
   };
 
   const removeFinishing = (id: string) => {
@@ -405,7 +537,7 @@ export default function ItemsPage() {
             <Table.Thead>
               <Table.Tr>
                 <Table.Th>Gambar</Table.Th>
-                <Table.Th>Nama</Table.Th>
+                <Table.Th>Nama / SKU</Table.Th>
                 <Table.Th>Kategori</Table.Th>
                 <Table.Th>Tipe Harga</Table.Th>
                 <Table.Th>Harga</Table.Th>
@@ -427,6 +559,11 @@ export default function ItemsPage() {
                   </Table.Td>
                   <Table.Td>
                     <Text fw={500}>{item.name}</Text>
+                    {item.sku && (
+                      <Text size="xs" c="dimmed" ff="monospace">
+                        {item.sku}
+                      </Text>
+                    )}
                     <Text size="sm" c="dimmed" lineClamp={1}>
                       {item.description}
                     </Text>
@@ -490,338 +627,599 @@ export default function ItemsPage() {
         <ScrollArea.Autosize mah="75vh">
           <form onSubmit={form.onSubmit(handleSubmit)}>
             <Stack>
-              {/* --- Basic Info --- */}
-              <Group grow align="flex-start">
-                <TextInput
-                  label="Nama Barang"
-                  placeholder="Nama barang"
-                  required
-                  {...form.getInputProps("name")}
-                />
-                <Select
-                  label="Kategori"
-                  placeholder="Pilih kategori"
-                  data={categoryNames}
-                  required
-                  searchable
-                  {...form.getInputProps("category")}
-                />
-              </Group>
+              {/* ========== SECTION 1: INFO PRODUK ========== */}
+              <Paper p="md" withBorder radius="md">
+                <Group gap="xs" mb="sm">
+                  <ThemeIcon size="sm" variant="light" color="aqua">
+                    <IconBarcode size={14} />
+                  </ThemeIcon>
+                  <Text size="sm" fw={600}>
+                    ① Info Produk
+                  </Text>
+                </Group>
 
-              <Textarea
-                label="Deskripsi"
-                placeholder="Deskripsi barang"
-                rows={2}
-                {...form.getInputProps("description")}
-              />
+                <Stack gap="sm">
+                  <Group grow align="flex-start">
+                    <TextInput
+                      label="Nama Barang"
+                      placeholder="Nama barang"
+                      required
+                      {...form.getInputProps("name")}
+                    />
+                    <Select
+                      label="Kategori"
+                      placeholder="Pilih kategori"
+                      data={categoryNames}
+                      required
+                      searchable
+                      {...form.getInputProps("category")}
+                    />
+                  </Group>
 
-              <Group grow align="flex-start">
-                <Select
-                  label="Satuan"
-                  placeholder="Pilih satuan"
-                  data={UNIT_OPTIONS}
-                  required
-                  {...form.getInputProps("unit")}
-                />
-                <Switch
-                  label="Produk Aktif"
-                  description="Nonaktifkan jika produk sementara tidak dijual"
-                  mt={6}
-                  checked={form.values.isActive}
-                  onChange={(e) =>
-                    form.setFieldValue("isActive", e.currentTarget.checked)
-                  }
-                />
-              </Group>
+                  <Group grow align="flex-end">
+                    <TextInput
+                      label="Kode / SKU"
+                      placeholder="Otomatis atau manual"
+                      leftSection={<IconBarcode size={14} />}
+                      {...form.getInputProps("sku")}
+                    />
+                    <Button
+                      variant="light"
+                      size="sm"
+                      onClick={generateSku}
+                      mb={1}
+                    >
+                      Auto-generate
+                    </Button>
+                  </Group>
 
-              <Divider label="Tipe Harga" labelPosition="center" />
+                  <Textarea
+                    label="Deskripsi"
+                    placeholder="Deskripsi barang"
+                    rows={2}
+                    {...form.getInputProps("description")}
+                  />
 
-              {/* --- Pricing Model Selector --- */}
-              <div>
-                <Text size="sm" fw={500} mb={4}>
-                  Model Harga <span style={{ color: "red" }}>*</span>
-                </Text>
-                <SegmentedControl
-                  fullWidth
-                  data={[
-                    {
-                      value: "fixed",
-                      label: (
-                        <Group gap={6} justify="center">
-                          <IconTag size={14} />
-                          <Text size="sm">Harga Tetap</Text>
-                        </Group>
-                      ),
-                    },
-                    {
-                      value: "area",
-                      label: (
-                        <Group gap={6} justify="center">
-                          <IconRulerMeasure size={14} />
-                          <Text size="sm">Per Ukuran</Text>
-                        </Group>
-                      ),
-                    },
-                    {
-                      value: "tiered",
-                      label: (
-                        <Group gap={6} justify="center">
-                          <IconChartBar size={14} />
-                          <Text size="sm">Bertingkat</Text>
-                        </Group>
-                      ),
-                    },
-                  ]}
-                  {...form.getInputProps("pricingModel")}
-                />
-              </div>
+                  <Group grow align="flex-start">
+                    <Select
+                      label="Satuan"
+                      placeholder="Pilih satuan"
+                      data={UNIT_OPTIONS}
+                      required
+                      {...form.getInputProps("unit")}
+                    />
+                    <Select
+                      label="Gambar"
+                      placeholder="Pilih gambar"
+                      data={Object.entries(DUMMY_IMAGES).map(([key]) => ({
+                        value: key,
+                        label: key.charAt(0).toUpperCase() + key.slice(1),
+                      }))}
+                      value={
+                        Object.entries(DUMMY_IMAGES).find(
+                          ([, url]) => url === form.values.imageUrl,
+                        )?.[0] || ""
+                      }
+                      onChange={(value) => {
+                        if (value) {
+                          form.setFieldValue(
+                            "imageUrl",
+                            DUMMY_IMAGES[value as keyof typeof DUMMY_IMAGES],
+                          );
+                        }
+                      }}
+                    />
+                  </Group>
 
-              {/* --- FIXED pricing --- */}
-              {form.values.pricingModel === "fixed" && (
-                <NumberInput
-                  label="Harga Satuan"
-                  placeholder="0"
-                  required
-                  min={0}
-                  prefix="Rp "
-                  thousandSeparator=","
-                  {...form.getInputProps("price")}
-                />
-              )}
+                  <Switch
+                    label="Produk Aktif"
+                    description="Nonaktifkan jika produk sementara tidak dijual"
+                    checked={form.values.isActive}
+                    onChange={(e) =>
+                      form.setFieldValue("isActive", e.currentTarget.checked)
+                    }
+                  />
+                </Stack>
+              </Paper>
 
-              {/* --- AREA pricing --- */}
-              {form.values.pricingModel === "area" && (
-                <Paper p="md" withBorder radius="md" bg="orange.0">
-                  <Stack gap="sm">
-                    <Text size="sm" fw={500} c="orange.8">
-                      Harga dihitung berdasarkan ukuran (Panjang × Lebar)
+              {/* ========== SECTION 2: MODEL HARGA ========== */}
+              <Paper p="md" withBorder radius="md">
+                <Group gap="xs" mb="sm">
+                  <ThemeIcon size="sm" variant="light" color="aqua">
+                    <IconTag size={14} />
+                  </ThemeIcon>
+                  <Text size="sm" fw={600}>
+                    ② Model Harga
+                  </Text>
+                </Group>
+
+                <Stack gap="sm">
+                  <div>
+                    <Text size="sm" fw={500} mb={4}>
+                      Tipe Harga <span style={{ color: "red" }}>*</span>
                     </Text>
-                    <Group grow>
+                    <SegmentedControl
+                      fullWidth
+                      data={[
+                        {
+                          value: "fixed",
+                          label: (
+                            <Group gap={6} justify="center">
+                              <IconTag size={14} />
+                              <Text size="sm">Harga Tetap</Text>
+                            </Group>
+                          ),
+                        },
+                        {
+                          value: "area",
+                          label: (
+                            <Group gap={6} justify="center">
+                              <IconRulerMeasure size={14} />
+                              <Text size="sm">Per Ukuran</Text>
+                            </Group>
+                          ),
+                        },
+                        {
+                          value: "tiered",
+                          label: (
+                            <Group gap={6} justify="center">
+                              <IconChartBar size={14} />
+                              <Text size="sm">Bertingkat</Text>
+                            </Group>
+                          ),
+                        },
+                      ]}
+                      {...form.getInputProps("pricingModel")}
+                    />
+                  </div>
+
+                  {/* --- FIXED pricing --- */}
+                  {form.values.pricingModel === "fixed" && (
+                    <NumberInput
+                      label="Harga Satuan"
+                      placeholder="0"
+                      required
+                      min={0}
+                      prefix="Rp "
+                      thousandSeparator=","
+                      {...form.getInputProps("price")}
+                    />
+                  )}
+
+                  {/* --- AREA pricing --- */}
+                  {form.values.pricingModel === "area" && (
+                    <Paper p="sm" withBorder radius="sm" bg="orange.0">
+                      <Stack gap="sm">
+                        <Text size="xs" fw={500} c="orange.8">
+                          Harga dihitung: Panjang × Lebar × Harga per satuan
+                          area
+                        </Text>
+                        <Group grow>
+                          <NumberInput
+                            label="Harga per satuan area"
+                            placeholder="0"
+                            required
+                            min={0}
+                            prefix="Rp "
+                            thousandSeparator=","
+                            {...form.getInputProps("pricePerSqm")}
+                          />
+                          <Select
+                            label="Satuan Area"
+                            data={AREA_UNIT_OPTIONS}
+                            {...form.getInputProps("areaUnit")}
+                          />
+                        </Group>
+                        <Group grow>
+                          <NumberInput
+                            label="Default Lebar"
+                            description="Template ukuran standar"
+                            placeholder="3"
+                            min={0}
+                            decimalScale={2}
+                            value={form.values.defaultWidth || ""}
+                            onChange={(v) =>
+                              form.setFieldValue("defaultWidth", Number(v) || 0)
+                            }
+                          />
+                          <NumberInput
+                            label="Default Tinggi"
+                            description="Template ukuran standar"
+                            placeholder="1"
+                            min={0}
+                            decimalScale={2}
+                            value={form.values.defaultHeight || ""}
+                            onChange={(v) =>
+                              form.setFieldValue(
+                                "defaultHeight",
+                                Number(v) || 0,
+                              )
+                            }
+                          />
+                        </Group>
+                        {form.values.defaultWidth > 0 &&
+                          form.values.defaultHeight > 0 && (
+                            <Text size="xs" c="orange.7">
+                              Luas default:{" "}
+                              {(
+                                form.values.defaultWidth *
+                                form.values.defaultHeight
+                              ).toFixed(2)}{" "}
+                              {form.values.areaUnit === "cm" ? "cm²" : "m²"} ={" "}
+                              {formatCurrency(
+                                form.values.pricePerSqm *
+                                  form.values.defaultWidth *
+                                  form.values.defaultHeight,
+                              )}
+                            </Text>
+                          )}
+                      </Stack>
+                    </Paper>
+                  )}
+
+                  {/* --- TIERED pricing --- */}
+                  {form.values.pricingModel === "tiered" && (
+                    <Paper p="sm" withBorder radius="sm" bg="violet.0">
+                      <Stack gap="sm">
+                        <Text size="xs" fw={500} c="violet.8">
+                          Harga bertingkat berdasarkan jumlah order
+                        </Text>
+                        {form.errors.tiers && (
+                          <Text size="xs" c="red">
+                            {form.errors.tiers}
+                          </Text>
+                        )}
+                        {form.values.tiers.map((tier, idx) => (
+                          <Group key={idx} grow align="flex-end">
+                            <NumberInput
+                              label={idx === 0 ? "Min Qty" : undefined}
+                              placeholder="Min"
+                              min={1}
+                              value={tier.minQty}
+                              onChange={(v) =>
+                                updateTier(idx, "minQty", Number(v) || 1)
+                              }
+                              size="sm"
+                            />
+                            <NumberInput
+                              label={idx === 0 ? "Max Qty" : undefined}
+                              placeholder="∞ (kosong)"
+                              min={1}
+                              value={tier.maxQty ?? ""}
+                              onChange={(v) =>
+                                updateTier(idx, "maxQty", v ? Number(v) : null)
+                              }
+                              size="sm"
+                            />
+                            <NumberInput
+                              label={idx === 0 ? "Harga" : undefined}
+                              placeholder="0"
+                              min={0}
+                              prefix="Rp "
+                              thousandSeparator=","
+                              value={tier.price}
+                              onChange={(v) =>
+                                updateTier(idx, "price", Number(v) || 0)
+                              }
+                              size="sm"
+                            />
+                            <Tooltip label="Hapus tier">
+                              <ActionIcon
+                                variant="light"
+                                color="red"
+                                size="lg"
+                                onClick={() => removeTier(idx)}
+                                disabled={form.values.tiers.length <= 1}
+                                mb={2}
+                              >
+                                <IconTrash size={14} />
+                              </ActionIcon>
+                            </Tooltip>
+                          </Group>
+                        ))}
+                        <Button
+                          variant="light"
+                          color="violet"
+                          size="xs"
+                          leftSection={<IconPlus size={14} />}
+                          onClick={addTier}
+                        >
+                          Tambah Tier
+                        </Button>
+                      </Stack>
+                    </Paper>
+                  )}
+
+                  {/* --- Cost Price & Margin --- */}
+                  <Divider variant="dashed" />
+                  <Group grow align="flex-end">
+                    <NumberInput
+                      label="Harga Modal (HPP)"
+                      description="Untuk kalkulasi margin"
+                      placeholder="0"
+                      min={0}
+                      prefix="Rp "
+                      thousandSeparator=","
+                      {...form.getInputProps("costPrice")}
+                    />
+                    <div>
+                      {marginPercent !== null && (
+                        <Paper
+                          p="xs"
+                          radius="sm"
+                          bg={marginPercent > 0 ? "teal.0" : "red.0"}
+                        >
+                          <Group gap={4}>
+                            <IconPercentage size={14} />
+                            <Text
+                              size="sm"
+                              fw={600}
+                              c={marginPercent > 0 ? "teal.7" : "red.7"}
+                            >
+                              Margin: {marginPercent}%
+                            </Text>
+                          </Group>
+                        </Paper>
+                      )}
+                    </div>
+                  </Group>
+                </Stack>
+              </Paper>
+
+              {/* ========== SECTION 3: MATERIAL & FINISHING ========== */}
+              <Paper p="md" withBorder radius="md">
+                <Group gap="xs" mb="sm">
+                  <ThemeIcon size="sm" variant="light" color="aqua">
+                    <IconSettings size={14} />
+                  </ThemeIcon>
+                  <Text size="sm" fw={600}>
+                    ③ Material & Finishing
+                  </Text>
+                </Group>
+
+                <Stack gap="sm">
+                  <MultiSelect
+                    label="Opsi Material"
+                    placeholder="Pilih material yang tersedia"
+                    data={MATERIALS}
+                    searchable
+                    {...form.getInputProps("materialOptions")}
+                  />
+
+                  <div>
+                    <Text size="sm" fw={500} mb={4}>
+                      Opsi Finishing
+                    </Text>
+                    <Text size="xs" c="dimmed" mb="xs">
+                      Setiap finishing bisa dikenakan per unit, per m², atau
+                      flat (sekali bayar)
+                    </Text>
+
+                    {form.values.finishingOptions.length > 0 && (
+                      <Stack gap={4} mb="xs">
+                        {form.values.finishingOptions.map((fo) => (
+                          <Paper key={fo.id} p="xs" withBorder radius="sm">
+                            <Group justify="space-between">
+                              <Group gap="xs">
+                                <Text size="sm" fw={500}>
+                                  {fo.name}
+                                </Text>
+                                <Badge size="sm" variant="light" color="aqua">
+                                  +{formatCurrency(fo.price)}
+                                </Badge>
+                                <Badge
+                                  size="xs"
+                                  variant="outline"
+                                  color={
+                                    fo.pricingType === "per_area"
+                                      ? "orange"
+                                      : fo.pricingType === "flat"
+                                        ? "gray"
+                                        : "blue"
+                                  }
+                                >
+                                  {fo.pricingType === "per_unit"
+                                    ? "Per Unit"
+                                    : fo.pricingType === "per_area"
+                                      ? "Per m²"
+                                      : "Flat"}
+                                </Badge>
+                              </Group>
+                              <ActionIcon
+                                size="sm"
+                                variant="subtle"
+                                color="red"
+                                onClick={() => removeFinishing(fo.id)}
+                              >
+                                <IconX size={12} />
+                              </ActionIcon>
+                            </Group>
+                          </Paper>
+                        ))}
+                      </Stack>
+                    )}
+
+                    <Group grow align="flex-end">
+                      <TextInput
+                        placeholder="Nama finishing"
+                        size="sm"
+                        value={newFinishName}
+                        onChange={(e) =>
+                          setNewFinishName(e.currentTarget.value)
+                        }
+                      />
                       <NumberInput
-                        label="Harga per satuan area"
-                        placeholder="0"
-                        required
+                        placeholder="Harga"
+                        size="sm"
                         min={0}
                         prefix="Rp "
                         thousandSeparator=","
-                        {...form.getInputProps("pricePerSqm")}
+                        value={newFinishPrice}
+                        onChange={(v) => setNewFinishPrice(Number(v) || 0)}
                       />
                       <Select
-                        label="Satuan Area"
-                        data={AREA_UNIT_OPTIONS}
-                        {...form.getInputProps("areaUnit")}
+                        placeholder="Tipe"
+                        size="sm"
+                        data={FINISHING_PRICING_TYPES.map((t) => ({
+                          value: t.value,
+                          label: t.label,
+                        }))}
+                        value={newFinishPricingType}
+                        onChange={(v) =>
+                          setNewFinishPricingType(
+                            (v as FinishingPricingType) || "per_unit",
+                          )
+                        }
                       />
+                      <Button
+                        variant="light"
+                        size="sm"
+                        leftSection={<IconPlus size={14} />}
+                        onClick={addFinishing}
+                        disabled={!newFinishName.trim()}
+                      >
+                        Tambah
+                      </Button>
                     </Group>
-                  </Stack>
-                </Paper>
-              )}
+                  </div>
+                </Stack>
+              </Paper>
 
-              {/* --- TIERED pricing --- */}
-              {form.values.pricingModel === "tiered" && (
-                <Paper p="md" withBorder radius="md" bg="violet.0">
-                  <Stack gap="sm">
-                    <Text size="sm" fw={500} c="violet.8">
-                      Harga bertingkat berdasarkan jumlah order
+              {/* ========== SECTION 4: PENGATURAN ========== */}
+              <Paper p="md" withBorder radius="md">
+                <Group gap="xs" mb="sm">
+                  <ThemeIcon size="sm" variant="light" color="aqua">
+                    <IconReceipt size={14} />
+                  </ThemeIcon>
+                  <Text size="sm" fw={600}>
+                    ④ Pengaturan Order
+                  </Text>
+                </Group>
+
+                <Stack gap="sm">
+                  <Group grow>
+                    <NumberInput
+                      label="Min. Order"
+                      description="Jumlah minimum pemesanan"
+                      placeholder="1"
+                      min={1}
+                      {...form.getInputProps("minOrder")}
+                    />
+                    <NumberInput
+                      label="Biaya Setup"
+                      description="Biaya desain / setup awal"
+                      placeholder="0"
+                      min={0}
+                      prefix="Rp "
+                      thousandSeparator=","
+                      {...form.getInputProps("setupFee")}
+                    />
+                    <NumberInput
+                      label="Maks. Diskon (%)"
+                      description="Batas diskon kasir"
+                      placeholder="100"
+                      min={0}
+                      max={100}
+                      suffix="%"
+                      {...form.getInputProps("maxDiscount")}
+                    />
+                  </Group>
+
+                  <Group grow>
+                    <NumberInput
+                      label="Estimasi Produksi (hari)"
+                      description="Berapa hari waktu pengerjaan"
+                      placeholder="1"
+                      min={0}
+                      leftSection={<IconClock size={14} />}
+                      {...form.getInputProps("productionDays")}
+                    />
+                    <div /> {/* spacer */}
+                    <div /> {/* spacer */}
+                  </Group>
+
+                  <Textarea
+                    label="Catatan Internal"
+                    description="Untuk tim produksi (tidak terlihat pelanggan)"
+                    placeholder="Catatan khusus produksi, resolusi file, jenis tinta, dll."
+                    rows={2}
+                    {...form.getInputProps("notes")}
+                  />
+                </Stack>
+              </Paper>
+
+              {/* ========== PRICE SIMULATOR ========== */}
+              {priceSimulation.total > 0 && (
+                <Paper p="md" withBorder radius="md" bg="gray.0">
+                  <Group gap="xs" mb="sm">
+                    <ThemeIcon size="sm" variant="light" color="teal">
+                      <IconReceipt size={14} />
+                    </ThemeIcon>
+                    <Text size="sm" fw={600}>
+                      💰 Simulasi Harga (Contoh: {priceSimulation.qty}{" "}
+                      {form.values.unit})
                     </Text>
-                    {form.errors.tiers && (
-                      <Text size="xs" c="red">
-                        {form.errors.tiers}
+                  </Group>
+
+                  <Stack gap={4}>
+                    <Group justify="space-between">
+                      <Text size="sm" c="dimmed">
+                        Subtotal ({priceSimulation.qty} unit)
                       </Text>
-                    )}
-                    {form.values.tiers.map((tier, idx) => (
-                      <Group key={idx} grow align="flex-end">
-                        <NumberInput
-                          label={idx === 0 ? "Min Qty" : undefined}
-                          placeholder="Min"
-                          min={1}
-                          value={tier.minQty}
-                          onChange={(v) =>
-                            updateTier(idx, "minQty", Number(v) || 1)
-                          }
-                          size="sm"
-                        />
-                        <NumberInput
-                          label={idx === 0 ? "Max Qty" : undefined}
-                          placeholder="∞ (kosong)"
-                          min={1}
-                          value={tier.maxQty ?? ""}
-                          onChange={(v) =>
-                            updateTier(idx, "maxQty", v ? Number(v) : null)
-                          }
-                          size="sm"
-                        />
-                        <NumberInput
-                          label={idx === 0 ? "Harga" : undefined}
-                          placeholder="0"
-                          min={0}
-                          prefix="Rp "
-                          thousandSeparator=","
-                          value={tier.price}
-                          onChange={(v) =>
-                            updateTier(idx, "price", Number(v) || 0)
-                          }
-                          size="sm"
-                        />
-                        <Tooltip label="Hapus tier">
-                          <ActionIcon
-                            variant="light"
-                            color="red"
-                            size="lg"
-                            onClick={() => removeTier(idx)}
-                            disabled={form.values.tiers.length <= 1}
-                            mb={2}
-                          >
-                            <IconTrash size={14} />
-                          </ActionIcon>
-                        </Tooltip>
+                      <Text size="sm" fw={500}>
+                        {formatCurrency(priceSimulation.subtotal)}
+                      </Text>
+                    </Group>
+
+                    {priceSimulation.finishingLines.map((line, i) => (
+                      <Group key={i} justify="space-between">
+                        <Text size="xs" c="dimmed" pl="sm">
+                          + {line}
+                        </Text>
                       </Group>
                     ))}
-                    <Button
-                      variant="light"
-                      color="violet"
-                      size="xs"
-                      leftSection={<IconPlus size={14} />}
-                      onClick={addTier}
-                    >
-                      Tambah Tier
-                    </Button>
+
+                    {priceSimulation.finishingTotal > 0 && (
+                      <Group justify="space-between">
+                        <Text size="sm" c="dimmed">
+                          Total Finishing
+                        </Text>
+                        <Text size="sm">
+                          +{formatCurrency(priceSimulation.finishingTotal)}
+                        </Text>
+                      </Group>
+                    )}
+
+                    {priceSimulation.setup > 0 && (
+                      <Group justify="space-between">
+                        <Text size="sm" c="dimmed">
+                          Setup Fee
+                        </Text>
+                        <Text size="sm">
+                          +{formatCurrency(priceSimulation.setup)}
+                        </Text>
+                      </Group>
+                    )}
+
+                    <Divider />
+
+                    <Group justify="space-between">
+                      <Text size="sm" fw={700}>
+                        TOTAL ESTIMASI
+                      </Text>
+                      <Text size="md" fw={700} c="teal">
+                        {formatCurrency(priceSimulation.total)}
+                      </Text>
+                    </Group>
+
+                    {marginPercent !== null && (
+                      <Text size="xs" c="dimmed" ta="right">
+                        Margin ~{marginPercent}%
+                      </Text>
+                    )}
                   </Stack>
                 </Paper>
               )}
-
-              <Divider label="Material & Finishing" labelPosition="center" />
-
-              {/* --- Material Options --- */}
-              <MultiSelect
-                label="Opsi Material"
-                placeholder="Pilih material yang tersedia"
-                data={MATERIALS}
-                searchable
-                {...form.getInputProps("materialOptions")}
-              />
-
-              {/* --- Finishing Options --- */}
-              <div>
-                <Text size="sm" fw={500} mb={4}>
-                  Opsi Finishing
-                </Text>
-                {form.values.finishingOptions.length > 0 && (
-                  <Stack gap={4} mb="xs">
-                    {form.values.finishingOptions.map((fo) => (
-                      <Paper key={fo.id} p="xs" withBorder radius="sm">
-                        <Group justify="space-between">
-                          <Group gap="xs">
-                            <Text size="sm" fw={500}>
-                              {fo.name}
-                            </Text>
-                            <Badge size="sm" variant="light" color="aqua">
-                              +{formatCurrency(fo.price)}
-                            </Badge>
-                          </Group>
-                          <ActionIcon
-                            size="sm"
-                            variant="subtle"
-                            color="red"
-                            onClick={() => removeFinishing(fo.id)}
-                          >
-                            <IconX size={12} />
-                          </ActionIcon>
-                        </Group>
-                      </Paper>
-                    ))}
-                  </Stack>
-                )}
-                <Group grow align="flex-end">
-                  <TextInput
-                    placeholder="Nama finishing (cth: Laminating)"
-                    size="sm"
-                    value={newFinishName}
-                    onChange={(e) => setNewFinishName(e.currentTarget.value)}
-                  />
-                  <NumberInput
-                    placeholder="Harga tambahan"
-                    size="sm"
-                    min={0}
-                    prefix="Rp "
-                    thousandSeparator=","
-                    value={newFinishPrice}
-                    onChange={(v) => setNewFinishPrice(Number(v) || 0)}
-                  />
-                  <Button
-                    variant="light"
-                    size="sm"
-                    leftSection={<IconPlus size={14} />}
-                    onClick={addFinishing}
-                    disabled={!newFinishName.trim()}
-                  >
-                    Tambah
-                  </Button>
-                </Group>
-              </div>
-
-              <Divider
-                label={
-                  <Group gap={4}>
-                    <IconSettings size={14} />
-                    <Text size="sm">Pengaturan Harga</Text>
-                  </Group>
-                }
-                labelPosition="center"
-              />
-
-              {/* --- Price Controls --- */}
-              <Group grow>
-                <NumberInput
-                  label="Min. Order"
-                  description="Jumlah minimum pemesanan"
-                  placeholder="1"
-                  min={1}
-                  {...form.getInputProps("minOrder")}
-                />
-                <NumberInput
-                  label="Biaya Setup"
-                  description="Biaya desain / setup awal"
-                  placeholder="0"
-                  min={0}
-                  prefix="Rp "
-                  thousandSeparator=","
-                  {...form.getInputProps("setupFee")}
-                />
-                <NumberInput
-                  label="Maks. Diskon (%)"
-                  description="Batas diskon kasir"
-                  placeholder="100"
-                  min={0}
-                  max={100}
-                  suffix="%"
-                  {...form.getInputProps("maxDiscount")}
-                />
-              </Group>
-
-              <Divider />
-
-              {/* --- Image --- */}
-              <Select
-                label="Gambar"
-                placeholder="Pilih gambar"
-                data={Object.entries(DUMMY_IMAGES).map(([key]) => ({
-                  value: key,
-                  label: key.charAt(0).toUpperCase() + key.slice(1),
-                }))}
-                value={
-                  Object.entries(DUMMY_IMAGES).find(
-                    ([, url]) => url === form.values.imageUrl,
-                  )?.[0] || ""
-                }
-                onChange={(value) => {
-                  if (value) {
-                    form.setFieldValue(
-                      "imageUrl",
-                      DUMMY_IMAGES[value as keyof typeof DUMMY_IMAGES],
-                    );
-                  }
-                }}
-              />
 
               <Group justify="flex-end" mt="md">
                 <Button variant="light" onClick={close}>

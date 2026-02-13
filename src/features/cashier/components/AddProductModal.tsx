@@ -54,10 +54,18 @@ export default function AddProductModal({
   const finishingData = useMemo(() => {
     if (!item?.finishingOptions || item.finishingOptions.length === 0)
       return [];
-    return item.finishingOptions.map((fo) => ({
-      value: fo.name,
-      label: `${fo.name} (+${formatCurrency(fo.price)})`,
-    }));
+    return item.finishingOptions.map((fo) => {
+      const typeLabel =
+        fo.pricingType === "per_area"
+          ? "/m²"
+          : fo.pricingType === "flat"
+            ? " flat"
+            : "/unit";
+      return {
+        value: fo.name,
+        label: `${fo.name} (+${formatCurrency(fo.price)}${typeLabel})`,
+      };
+    });
   }, [item]);
 
   // Get tiered price for the current quantity
@@ -74,14 +82,30 @@ export default function AddProductModal({
     return item.price;
   };
 
-  // Calculate finishing add-on total
-  const finishingTotal = useMemo(() => {
-    if (!item?.finishingOptions || finishing.length === 0) return 0;
-    return finishing.reduce((sum, fName) => {
-      const opt = item.finishingOptions?.find((fo) => fo.name === fName);
-      return sum + (opt?.price || 0);
-    }, 0);
-  }, [finishing, item]);
+  // Calculate finishing cost breakdown by pricingType
+  const finishingBreakdown = useMemo(() => {
+    if (!item?.finishingOptions || finishing.length === 0)
+      return { perUnitSum: 0, perAreaSum: 0, flatSum: 0, total: 0 };
+    let perUnitSum = 0;
+    let perAreaSum = 0;
+    let flatSum = 0;
+    for (const fName of finishing) {
+      const opt = item.finishingOptions.find((fo) => fo.name === fName);
+      if (!opt) continue;
+      if (opt.pricingType === "per_area") perAreaSum += opt.price;
+      else if (opt.pricingType === "flat") flatSum += opt.price;
+      else perUnitSum += opt.price;
+    }
+    const totalPerUnit = perUnitSum * quantity;
+    const totalPerArea = perAreaSum * (area || 1) * quantity;
+    const totalFlat = flatSum;
+    return {
+      perUnitSum,
+      perAreaSum,
+      flatSum,
+      total: totalPerUnit + totalPerArea + totalFlat,
+    };
+  }, [finishing, item, quantity, area]);
 
   const calculateTotal = () => {
     if (!item) return 0;
@@ -97,8 +121,8 @@ export default function AddProductModal({
       baseTotal = item.price * quantity;
     }
 
-    // Add finishing costs (per unit/per piece)
-    const finishingCost = finishingTotal * quantity;
+    // Add finishing costs (calculated with proper pricingType)
+    const finishingCost = finishingBreakdown.total;
 
     // Add setup fee (one-time)
     const setupFee = item.setupFee || 0;
@@ -324,13 +348,13 @@ export default function AddProductModal({
               </Group>
             )}
 
-            {finishingTotal > 0 && (
+            {finishingBreakdown.total > 0 && (
               <Group justify="space-between">
                 <Text size="sm" c="dimmed">
                   Finishing
                 </Text>
                 <Text size="sm">
-                  +{formatCurrency(finishingTotal)} × {quantity}
+                  +{formatCurrency(finishingBreakdown.total)}
                 </Text>
               </Group>
             )}
@@ -356,12 +380,22 @@ export default function AddProductModal({
         </Paper>
 
         <Group grow>
-          <Button variant="outline" onClick={handleClose} size="lg">
+          <Button
+            style={{
+              fontSize: "12px",
+            }}
+            variant="outline"
+            onClick={handleClose}
+            size="lg"
+          >
             Batal
           </Button>
           <Button
             onClick={handleAdd}
             size="lg"
+            style={{
+              fontSize: "12px",
+            }}
             disabled={
               (isAreaBased && (!width || !height)) || quantity < minOrder
             }

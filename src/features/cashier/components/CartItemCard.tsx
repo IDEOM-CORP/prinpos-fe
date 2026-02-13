@@ -175,10 +175,18 @@ export default function CartItemCard({
             cartItem.item.finishingOptions.length > 0 && (
               <MultiSelect
                 label="Finishing"
-                data={cartItem.item.finishingOptions.map((fo) => ({
-                  value: fo.name,
-                  label: `${fo.name} (+${formatCurrency(fo.price)})`,
-                }))}
+                data={cartItem.item.finishingOptions.map((fo) => {
+                  const typeLabel =
+                    fo.pricingType === "per_area"
+                      ? "/m²"
+                      : fo.pricingType === "flat"
+                        ? " flat"
+                        : "/unit";
+                  return {
+                    value: fo.name,
+                    label: `${fo.name} (+${formatCurrency(fo.price)}${typeLabel})`,
+                  };
+                })}
                 value={cartItem.finishing || []}
                 onChange={(val) => onUpdateFinishing(val)}
                 size="xs"

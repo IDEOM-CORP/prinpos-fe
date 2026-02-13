@@ -21,13 +21,20 @@ export const useItemStore = create<ItemStore>()(
       initializeItems: () => {
         const currentItems = get().items;
 
-        // Check if items need migration (missing isActive or finishingOptions field)
+        // Check if items need migration (missing new fields or stale structure)
         const needsMigration =
           currentItems.length > 0 &&
           currentItems.some(
             (item) =>
               !item.pricingModel ||
               item.isActive === undefined ||
+              !item.sku ||
+              item.costPrice === undefined ||
+              // Check finishing options missing pricingType
+              (item.finishingOptions &&
+                item.finishingOptions.length > 0 &&
+                !(item.finishingOptions[0] as Record<string, unknown>)
+                  .pricingType) ||
               (item as unknown as Record<string, unknown>)["stock"] !==
                 undefined,
           );

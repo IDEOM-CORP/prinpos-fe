@@ -178,19 +178,27 @@ export const useCartStore = create<CartStore>()(
             itemPrice = item.price * cartItem.quantity;
           }
 
-          // Add finishing costs
+          // Add finishing costs (respecting pricingType)
           if (
             cartItem.finishing &&
             cartItem.finishing.length > 0 &&
             item.finishingOptions
           ) {
-            const finishingCost = cartItem.finishing.reduce((sum, fName) => {
-              const opt = item.finishingOptions?.find(
-                (fo) => fo.name === fName,
-              );
-              return sum + (opt?.price || 0);
-            }, 0);
-            itemPrice += finishingCost * cartItem.quantity;
+            for (const fName of cartItem.finishing) {
+              const opt = item.finishingOptions.find((fo) => fo.name === fName);
+              if (!opt) continue;
+              if (opt.pricingType === "per_area") {
+                // Per area: price × area × qty
+                const area = cartItem.area || 1;
+                itemPrice += opt.price * area * cartItem.quantity;
+              } else if (opt.pricingType === "flat") {
+                // Flat: one-time fee
+                itemPrice += opt.price;
+              } else {
+                // Per unit (default): price × qty
+                itemPrice += opt.price * cartItem.quantity;
+              }
+            }
           }
 
           // Add setup fee (one-time per item type)

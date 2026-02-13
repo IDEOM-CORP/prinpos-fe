@@ -126,3 +126,10 @@ export const FINISHING_OPTIONS = [
   "Standing",
   "Pole",
 ];
+
+// Finishing pricing types
+export const FINISHING_PRICING_TYPES = [
+  { value: "per_unit", label: "Per Unit" },
+  { value: "per_area", label: "Per m²" },
+  { value: "flat", label: "Flat (sekali)" },
+] as const;
