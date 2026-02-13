@@ -33,8 +33,9 @@ export const useItemStore = create<ItemStore>()(
               // Check finishing options missing pricingType
               (item.finishingOptions &&
                 item.finishingOptions.length > 0 &&
-                !(item.finishingOptions[0] as Record<string, unknown>)
-                  .pricingType) ||
+                !(
+                  item.finishingOptions[0] as unknown as Record<string, unknown>
+                ).pricingType) ||
               (item as unknown as Record<string, unknown>)["stock"] !==
                 undefined,
           );

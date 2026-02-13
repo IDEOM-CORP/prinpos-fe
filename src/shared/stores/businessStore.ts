@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { Business, Branch } from "../types";
+import type { Business, Branch } from "../types";
 import { dummyBusinesses, dummyBranches } from "../data/dummy";
 import { generateId } from "../utils";
 
@@ -64,9 +64,7 @@ export const useBusinessStore = create<BusinessStore>()(
       deleteBusiness: (id) => {
         set((state) => ({
           businesses: state.businesses.filter((business) => business.id !== id),
-          branches: state.branches.filter(
-            (branch) => branch.businessId !== id,
-          ),
+          branches: state.branches.filter((branch) => branch.businessId !== id),
         }));
       },
 

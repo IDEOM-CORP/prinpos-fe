@@ -1,7 +1,25 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import type { Order } from "../types";
+import type { Order, PaymentRecord, DpStatus } from "../types";
 import { generateId, generateOrderNumber } from "../utils";
+import { MIN_DP_PERCENT } from "../constants";
+
+// Helper to compute dpStatus from payment state
+function computeDpStatus(order: {
+  paymentType: Order["paymentType"];
+  total: number;
+  paidAmount: number;
+  minDpPercent: number;
+}): DpStatus {
+  if (order.paymentType === "full") {
+    return order.paidAmount >= order.total ? "paid" : "none";
+  }
+  if (order.paidAmount >= order.total) return "paid";
+  const minDpAmount = order.total * (order.minDpPercent / 100);
+  if (order.paidAmount >= minDpAmount) return "sufficient";
+  if (order.paidAmount > 0) return "insufficient";
+  return "none";
+}
 
 interface OrderStore {
   orders: Order[];
@@ -15,9 +33,18 @@ interface OrderStore {
   getOrdersByStatus: (status: Order["status"]) => Order[];
   assignOrderToUser: (orderId: string, userId: string) => void;
   updateOrderStatus: (orderId: string, status: Order["status"]) => void;
-  addPayment: (orderId: string, amount: number, method?: string) => void;
-  getOutstandingOrders: () => Order[]; // Orders with partial payment
-  getTotalOutstanding: () => number; // Total unpaid amount
+  addPayment: (
+    orderId: string,
+    amount: number,
+    method: string,
+    paidBy: string,
+    note?: string,
+  ) => void;
+  getOutstandingOrders: () => Order[];
+  getTotalOutstanding: () => number;
+  getPaymentHistory: (orderId: string) => PaymentRecord[];
+  isProductionReady: (orderId: string) => boolean;
+  getDpStatus: (orderId: string) => DpStatus;
 }
 
 export const useOrderStore = create<OrderStore>()(
@@ -78,7 +105,7 @@ export const useOrderStore = create<OrderStore>()(
         get().updateOrder(orderId, updates);
       },
 
-      addPayment: (orderId, amount, method) => {
+      addPayment: (orderId, amount, method, paidBy, note) => {
         const order = get().getOrderById(orderId);
         if (!order) return;
 
@@ -94,11 +121,36 @@ export const useOrderStore = create<OrderStore>()(
           newPaymentStatus = "unpaid";
         }
 
+        // Create payment record
+        const paymentRecord: PaymentRecord = {
+          id: generateId(),
+          orderId,
+          amount,
+          method,
+          note,
+          paidBy,
+          createdAt: new Date().toISOString(),
+        };
+
+        const updatedPayments = [...(order.payments || []), paymentRecord];
+        const updatedPaidAmount = newPaidAmount;
+        const updatedRemaining = Math.max(0, newRemainingPayment);
+
+        // Recompute dpStatus
+        const newDpStatus = computeDpStatus({
+          paymentType: order.paymentType,
+          total: order.total,
+          paidAmount: updatedPaidAmount,
+          minDpPercent: order.minDpPercent || MIN_DP_PERCENT,
+        });
+
         get().updateOrder(orderId, {
-          paidAmount: newPaidAmount,
-          remainingPayment: Math.max(0, newRemainingPayment),
+          paidAmount: updatedPaidAmount,
+          remainingPayment: updatedRemaining,
           paymentStatus: newPaymentStatus,
+          dpStatus: newDpStatus,
           paymentMethod: method || order.paymentMethod,
+          payments: updatedPayments,
         });
       },
 
@@ -114,6 +166,43 @@ export const useOrderStore = create<OrderStore>()(
         return get()
           .getOutstandingOrders()
           .reduce((total, order) => total + order.remainingPayment, 0);
+      },
+
+      getPaymentHistory: (orderId) => {
+        const order = get().getOrderById(orderId);
+        return order?.payments || [];
+      },
+
+      isProductionReady: (orderId) => {
+        const order = get().getOrderById(orderId);
+        if (!order) return false;
+        // Full payment orders are always production-ready
+        if (order.paymentType === "full" && order.paymentStatus === "paid")
+          return true;
+        // DP orders: check if DP meets minimum threshold
+        const dpStatus =
+          order.dpStatus ||
+          computeDpStatus({
+            paymentType: order.paymentType,
+            total: order.total,
+            paidAmount: order.paidAmount,
+            minDpPercent: order.minDpPercent || MIN_DP_PERCENT,
+          });
+        return dpStatus === "sufficient" || dpStatus === "paid";
+      },
+
+      getDpStatus: (orderId) => {
+        const order = get().getOrderById(orderId);
+        if (!order) return "none";
+        return (
+          order.dpStatus ||
+          computeDpStatus({
+            paymentType: order.paymentType,
+            total: order.total,
+            paidAmount: order.paidAmount,
+            minDpPercent: order.minDpPercent || MIN_DP_PERCENT,
+          })
+        );
       },
     }),
     {

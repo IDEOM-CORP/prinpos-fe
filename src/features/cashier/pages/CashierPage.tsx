@@ -31,6 +31,7 @@ import {
   IconRulerMeasure,
   IconTag,
   IconChartBar,
+  IconAlertTriangle,
 } from "@tabler/icons-react";
 import type { Item } from "../../../shared/types";
 import { useItemStore } from "../../../shared/stores/itemStore";
@@ -38,10 +39,15 @@ import { useCartStore } from "../../../shared/stores/cartStore";
 import { useOrderStore } from "../../../shared/stores/orderStore";
 import { useAuthStore } from "../../../shared/stores/authStore";
 import { formatCurrency } from "../../../shared/utils";
-import { TAX_RATE } from "../../../shared/constants";
+import {
+  TAX_RATE,
+  MIN_DP_PERCENT,
+  DP_QUICK_OPTIONS,
+} from "../../../shared/constants";
 import CartItemCard from "../components/CartItemCard";
 import AddProductModal from "../components/AddProductModal";
 import { useCategoryStore } from "../../../shared/stores/categoryStore";
+import { useCustomerStore } from "../../../shared/stores/customerStore";
 
 export default function CashierPage() {
   const categories = useCategoryStore((state) => state.categories);
@@ -59,6 +65,7 @@ export default function CashierPage() {
   const getItemCount = useCartStore((state) => state.getItemCount);
   const addOrder = useOrderStore((state) => state.addOrder);
   const user = useAuthStore((state) => state.user);
+  const customers = useCustomerStore((state) => state.customers);
 
   const [checkoutOpened, { open: openCheckout, close: closeCheckout }] =
     useDisclosure(false);
@@ -72,7 +79,7 @@ export default function CashierPage() {
 
   const form = useForm({
     initialValues: {
-      customerName: "",
+      customerId: "",
       customerPhone: "",
       paymentType: "full",
       downPaymentAmount: 0,
@@ -81,8 +88,7 @@ export default function CashierPage() {
       notes: "",
     },
     validate: {
-      customerName: (value) =>
-        value.trim() ? null : "Nama pelanggan wajib diisi",
+      customerId: (value) => (value.trim() ? null : "Pelanggan wajib dipilih"),
       downPaymentAmount: (value, values) => {
         if (values.paymentType === "dp") {
           const total = getTotal() + getTotal() * TAX_RATE;
@@ -154,15 +160,45 @@ export default function CashierPage() {
 
     if (!user) return;
 
+    const selectedCustomer = customers.find((c) => c.id === values.customerId);
+    const customerName = selectedCustomer?.name || "Walk-in";
+    const customerPhone = values.customerPhone || selectedCustomer?.phone || "";
+
     const paymentType = values.paymentType as "full" | "dp" | "installment";
     const downPayment =
       paymentType === "full" ? total : values.downPaymentAmount;
     const remainingPayment = paymentType === "full" ? 0 : total - downPayment;
     const paymentStatus = paymentType === "full" ? "paid" : "partial";
 
+    // Compute initial dpStatus
+    const minDpAmount = total * (MIN_DP_PERCENT / 100);
+    let dpStatus: "none" | "insufficient" | "sufficient" | "paid";
+    if (paymentType === "full") {
+      dpStatus = "paid";
+    } else if (downPayment >= total) {
+      dpStatus = "paid";
+    } else if (downPayment >= minDpAmount) {
+      dpStatus = "sufficient";
+    } else if (downPayment > 0) {
+      dpStatus = "insufficient";
+    } else {
+      dpStatus = "none";
+    }
+
+    // Create initial payment record
+    const initialPayment = {
+      id: Date.now().toString(36) + Math.random().toString(36).substring(2),
+      orderId: "", // will be set after order creation
+      amount: downPayment,
+      method: values.paymentMethod,
+      paidBy: user.id,
+      createdAt: new Date().toISOString(),
+    };
+
     const order = addOrder({
-      customerName: values.customerName,
-      customerPhone: values.customerPhone,
+      customerId: values.customerId || undefined,
+      customerName,
+      customerPhone,
       items: cart.map((c) => ({
         itemId: c.item.id,
         name: c.item.name,
@@ -189,11 +225,18 @@ export default function CashierPage() {
       total,
       paymentType,
       paymentStatus,
+      dpStatus,
       downPayment,
       remainingPayment,
       paidAmount: downPayment,
       paymentMethod: values.paymentMethod,
-      deadline: values.deadline?.toISOString(),
+      minDpPercent: MIN_DP_PERCENT,
+      payments: [initialPayment],
+      deadline: values.deadline
+        ? values.deadline instanceof Date
+          ? values.deadline.toISOString()
+          : new Date(values.deadline).toISOString()
+        : undefined,
       status: "pending",
       branchId: user.branchId,
       businessId: user.businessId,
@@ -201,10 +244,12 @@ export default function CashierPage() {
       notes: values.notes,
     });
 
+    const dpStatusLabel =
+      dpStatus === "insufficient" ? " ⚠️ DP belum cukup untuk produksi" : "";
     notifications.show({
       title: "Order Berhasil",
-      message: `Order ${order.orderNumber} telah dibuat${paymentType === "dp" ? " dengan DP " + formatCurrency(downPayment) : ""}`,
-      color: "green",
+      message: `Order ${order.orderNumber} telah dibuat${paymentType === "dp" ? " dengan DP " + formatCurrency(downPayment) + " — Sisa: " + formatCurrency(remainingPayment) + dpStatusLabel : ""}`,
+      color: dpStatus === "insufficient" ? "orange" : "green",
     });
 
     clearCart();
@@ -552,16 +597,29 @@ export default function CashierPage() {
 
               <Divider label="Data Pelanggan" labelPosition="center" />
 
-              <TextInput
-                label="Nama Pelanggan"
-                placeholder="Masukkan nama pelanggan"
+              <Select
+                label="Pelanggan"
+                placeholder="Pilih pelanggan"
                 required
                 size="lg"
-                {...form.getInputProps("customerName")}
+                searchable
+                data={customers.map((c) => ({
+                  value: c.id,
+                  label: c.company ? `${c.name} — ${c.company}` : c.name,
+                }))}
+                {...form.getInputProps("customerId")}
+                onChange={(val) => {
+                  form.setFieldValue("customerId", val || "");
+                  // Auto-fill phone from customer data
+                  const cust = customers.find((c) => c.id === val);
+                  if (cust?.phone && cust.phone !== "-") {
+                    form.setFieldValue("customerPhone", cust.phone);
+                  }
+                }}
               />
               <TextInput
                 label="No. Telepon"
-                placeholder="08xxxxxxxxxx"
+                placeholder="08xxxxxxxxxx (otomatis dari data pelanggan)"
                 size="lg"
                 {...form.getInputProps("customerPhone")}
               />
@@ -589,6 +647,33 @@ export default function CashierPage() {
 
               {form.values.paymentType === "dp" && (
                 <Paper p="md" withBorder bg="orange.0">
+                  <Text size="sm" fw={600} mb="xs">
+                    Pilih cepat jumlah DP:
+                  </Text>
+                  <Group gap="xs" mb="md">
+                    {DP_QUICK_OPTIONS.map((pct) => (
+                      <Button
+                        key={pct}
+                        size="xs"
+                        variant={
+                          form.values.downPaymentAmount ===
+                          Math.round(total * (pct / 100))
+                            ? "filled"
+                            : "outline"
+                        }
+                        onClick={() =>
+                          form.setFieldValue(
+                            "downPaymentAmount",
+                            Math.round(total * (pct / 100)),
+                          )
+                        }
+                      >
+                        {pct}% —{" "}
+                        {formatCurrency(Math.round(total * (pct / 100)))}
+                      </Button>
+                    ))}
+                  </Group>
+
                   <NumberInput
                     label="Jumlah DP"
                     placeholder="Masukkan jumlah DP"
@@ -601,11 +686,46 @@ export default function CashierPage() {
                     required
                     {...form.getInputProps("downPaymentAmount")}
                   />
+
                   {form.values.downPaymentAmount > 0 && (
-                    <Text size="sm" c="dimmed" mt="xs">
-                      Sisa tagihan:{" "}
-                      {formatCurrency(total - form.values.downPaymentAmount)}
-                    </Text>
+                    <Stack gap="xs" mt="sm">
+                      <Group justify="space-between">
+                        <Text size="sm" c="dimmed">
+                          Sisa tagihan:
+                        </Text>
+                        <Text size="sm" fw={600} c="red">
+                          {formatCurrency(
+                            total - form.values.downPaymentAmount,
+                          )}
+                        </Text>
+                      </Group>
+                      <Group justify="space-between">
+                        <Text size="sm" c="dimmed">
+                          DP Minimum ({MIN_DP_PERCENT}%):
+                        </Text>
+                        <Text size="sm" fw={600}>
+                          {formatCurrency(
+                            Math.round(total * (MIN_DP_PERCENT / 100)),
+                          )}
+                        </Text>
+                      </Group>
+
+                      {form.values.downPaymentAmount <
+                        Math.round(total * (MIN_DP_PERCENT / 100)) && (
+                        <Paper p="xs" bg="red.0" style={{ borderRadius: 8 }}>
+                          <Group gap="xs">
+                            <IconAlertTriangle
+                              size={16}
+                              color="var(--mantine-color-red-6)"
+                            />
+                            <Text size="xs" c="red.7" fw={500}>
+                              DP di bawah {MIN_DP_PERCENT}% — produksi belum
+                              bisa dimulai sampai DP cukup
+                            </Text>
+                          </Group>
+                        </Paper>
+                      )}
+                    </Stack>
                   )}
                 </Paper>
               )}

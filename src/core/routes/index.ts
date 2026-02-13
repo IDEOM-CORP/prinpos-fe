@@ -20,6 +20,9 @@ export const ROUTES = {
   // Categories
   CATEGORIES: "/categories",
 
+  // Customers
+  CUSTOMERS: "/customers",
+
   // Items
   ITEMS: "/items",
 

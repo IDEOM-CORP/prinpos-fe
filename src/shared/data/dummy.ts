@@ -1,4 +1,4 @@
-import type { Business, Branch, User, Item } from "../types";
+import type { Business, Branch, User, Item, Customer } from "../types";
 import { DUMMY_IMAGES } from "../constants";
 
 export const dummyBusinesses: Business[] = [
@@ -416,6 +416,76 @@ export const dummyItems: Item[] = [
     notes: "Perlu konfirmasi jenis huruf dan ukuran per karakter",
     isActive: true,
     imageUrl: DUMMY_IMAGES.letterTimbul,
+    businessId: "org-1",
+    createdAt: "2024-01-01T00:00:00.000Z",
+  },
+];
+
+export const dummyCustomers: Customer[] = [
+  {
+    id: "cust-1",
+    name: "PT Maju Bersama",
+    phone: "021-55501234",
+    email: "procurement@majubersama.co.id",
+    address: "Jl. Gatot Subroto No. 10, Jakarta Selatan",
+    company: "PT Maju Bersama",
+    notes: "Langganan bulanan, tagihan net-30",
+    businessId: "org-1",
+    createdAt: "2024-01-05T00:00:00.000Z",
+  },
+  {
+    id: "cust-2",
+    name: "Andi Wijaya",
+    phone: "081234500001",
+    email: "andi.w@gmail.com",
+    address: "Jl. Kemang Raya No. 22, Jakarta Selatan",
+    businessId: "org-1",
+    createdAt: "2024-01-10T00:00:00.000Z",
+  },
+  {
+    id: "cust-3",
+    name: "CV Printing Jaya",
+    phone: "021-77889900",
+    email: "order@printingjaya.com",
+    address: "Jl. Industri No. 5, Tangerang",
+    company: "CV Printing Jaya",
+    notes: "Reseller, harga khusus",
+    businessId: "org-1",
+    createdAt: "2024-02-01T00:00:00.000Z",
+  },
+  {
+    id: "cust-4",
+    name: "Siti Rahayu",
+    phone: "085678901234",
+    address: "Jl. Sudirman Blok A3, Bekasi",
+    businessId: "org-1",
+    createdAt: "2024-02-15T00:00:00.000Z",
+  },
+  {
+    id: "cust-5",
+    name: "Dinas Pariwisata Kota Tangerang",
+    phone: "021-55112233",
+    email: "dispar@tangerangkota.go.id",
+    address: "Jl. Perintis Kemerdekaan No. 1, Tangerang",
+    company: "Pemkot Tangerang",
+    notes: "Instansi pemerintah, butuh kwitansi & faktur",
+    businessId: "org-1",
+    createdAt: "2024-03-01T00:00:00.000Z",
+  },
+  {
+    id: "cust-6",
+    name: "Budi Santoso",
+    phone: "087812345678",
+    email: "budi.s@yahoo.com",
+    address: "Jl. Pahlawan No. 88, Depok",
+    businessId: "org-1",
+    createdAt: "2024-03-10T00:00:00.000Z",
+  },
+  {
+    id: "cust-7",
+    name: "Walk-in Customer",
+    phone: "-",
+    notes: "Pelanggan umum tanpa data",
     businessId: "org-1",
     createdAt: "2024-01-01T00:00:00.000Z",
   },

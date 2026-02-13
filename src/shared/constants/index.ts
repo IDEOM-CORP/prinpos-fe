@@ -63,6 +63,12 @@ export const DUMMY_IMAGES = {
 // Tax rate
 export const TAX_RATE = 0.11; // 11% PPN
 
+// Minimum DP percentage (default threshold for production readiness)
+export const MIN_DP_PERCENT = 50; // 50% minimum DP
+
+// Quick DP percentage options for cashier
+export const DP_QUICK_OPTIONS = [30, 50, 75] as const;
+
 // Payment types
 export const PAYMENT_TYPES = {
   FULL: "full",

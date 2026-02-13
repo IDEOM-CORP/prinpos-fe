@@ -19,7 +19,7 @@ import { useBusinessStore } from "../../../shared/stores/businessStore";
 import { formatCurrency, formatDateTime } from "../../../shared/utils";
 import { IconBuildingStore } from "@tabler/icons-react";
 import { ROUTES } from "../../../core/routes";
-import type { Order } from "../../../shared/types";
+import type { Order, PaymentStatus, DpStatus } from "../../../shared/types";
 
 export default function OrdersPage() {
   const navigate = useNavigate();
@@ -30,6 +30,7 @@ export default function OrdersPage() {
   const [selectedBranchId, setSelectedBranchId] = useState("");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [paymentFilter, setPaymentFilter] = useState<string>("all");
 
   // Branch filter: owner uses global filter, others see their branch only
   const branchFilteredOrders =
@@ -45,8 +46,65 @@ export default function OrdersPage() {
       order.customerName.toLowerCase().includes(search.toLowerCase());
     const matchesStatus =
       statusFilter === "all" || order.status === statusFilter;
-    return matchesSearch && matchesStatus;
+    const matchesPayment =
+      paymentFilter === "all" || order.paymentStatus === paymentFilter;
+    return matchesSearch && matchesStatus && matchesPayment;
   });
+
+  const getPaymentStatusColor = (status: PaymentStatus) => {
+    switch (status) {
+      case "paid":
+        return "green";
+      case "partial":
+        return "orange";
+      case "unpaid":
+        return "red";
+      default:
+        return "gray";
+    }
+  };
+
+  const getPaymentStatusLabel = (status: PaymentStatus) => {
+    switch (status) {
+      case "paid":
+        return "Lunas";
+      case "partial":
+        return "DP / Cicilan";
+      case "unpaid":
+        return "Belum Bayar";
+      default:
+        return status;
+    }
+  };
+
+  const getDpStatusBadge = (order: Order) => {
+    const dpStatus: DpStatus = order.dpStatus || "none";
+    if (order.paymentType === "full" && order.paymentStatus === "paid") {
+      return null; // No DP badge needed for paid-full orders
+    }
+    switch (dpStatus) {
+      case "paid":
+        return (
+          <Badge size="xs" color="green" variant="dot">
+            Lunas
+          </Badge>
+        );
+      case "sufficient":
+        return (
+          <Badge size="xs" color="teal" variant="dot">
+            DP Cukup
+          </Badge>
+        );
+      case "insufficient":
+        return (
+          <Badge size="xs" color="red" variant="dot">
+            DP Kurang
+          </Badge>
+        );
+      default:
+        return null;
+    }
+  };
 
   const getStatusColor = (status: Order["status"]) => {
     switch (status) {
@@ -124,6 +182,18 @@ export default function OrdersPage() {
             onChange={(value) => setStatusFilter(value || "all")}
             style={{ width: 200 }}
           />
+          <Select
+            placeholder="Filter Pembayaran"
+            data={[
+              { value: "all", label: "Semua Pembayaran" },
+              { value: "paid", label: "Lunas" },
+              { value: "partial", label: "DP / Cicilan" },
+              { value: "unpaid", label: "Belum Bayar" },
+            ]}
+            value={paymentFilter}
+            onChange={(value) => setPaymentFilter(value || "all")}
+            style={{ width: 200 }}
+          />
         </Group>
       </Card>
 
@@ -142,6 +212,8 @@ export default function OrdersPage() {
                 <Table.Th>Pelanggan</Table.Th>
                 <Table.Th>Tanggal</Table.Th>
                 <Table.Th>Total</Table.Th>
+                <Table.Th>Pembayaran</Table.Th>
+                <Table.Th>Sisa</Table.Th>
                 <Table.Th>Status</Table.Th>
                 <Table.Th>Aksi</Table.Th>
               </Table.Tr>
@@ -177,6 +249,33 @@ export default function OrdersPage() {
                     </Table.Td>
                     <Table.Td>
                       <Text fw={500}>{formatCurrency(order.total)}</Text>
+                    </Table.Td>
+                    <Table.Td>
+                      <Group gap={6}>
+                        <Badge
+                          color={getPaymentStatusColor(order.paymentStatus)}
+                          size="sm"
+                        >
+                          {getPaymentStatusLabel(order.paymentStatus)}
+                        </Badge>
+                        {getDpStatusBadge(order)}
+                      </Group>
+                      {order.paymentType === "dp" && order.paidAmount > 0 && (
+                        <Text size="xs" c="dimmed" mt={2}>
+                          DP: {formatCurrency(order.paidAmount)}
+                        </Text>
+                      )}
+                    </Table.Td>
+                    <Table.Td>
+                      {order.remainingPayment > 0 ? (
+                        <Text size="sm" fw={500} c="red">
+                          {formatCurrency(order.remainingPayment)}
+                        </Text>
+                      ) : (
+                        <Text size="sm" c="green" fw={500}>
+                          —
+                        </Text>
+                      )}
                     </Table.Td>
                     <Table.Td>
                       <Badge color={getStatusColor(order.status)}>

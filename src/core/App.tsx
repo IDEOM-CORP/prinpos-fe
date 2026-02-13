@@ -14,6 +14,7 @@ import OrdersPage from "../features/orders/pages/OrdersPage";
 import OrderDetailPage from "../features/orders/pages/OrderDetailPage";
 import ItemsPage from "../features/items/pages/ItemsPage";
 import CategoriesPage from "../features/categories/pages/CategoriesPage";
+import CustomersPage from "../features/customers/pages/CustomersPage";
 import UsersPage from "../features/users/pages/UsersPage";
 import BusinessesPage from "../features/business/pages/BusinessesPage";
 import BranchesPage from "../features/business/pages/BranchesPage";
@@ -25,6 +26,7 @@ import ProtectedRoute from "../shared/components/ProtectedRoute";
 import SuperAdminLoginPage from "../features/superadmin/pages/SuperAdminLoginPage";
 import SuperAdminDashboardPage from "../features/superadmin/pages/SuperAdminDashboardPage";
 import { useCategoryStore } from "../shared/stores/categoryStore";
+import { useCustomerStore } from "../shared/stores/customerStore";
 
 function App() {
   const initializeItems = useItemStore((state) => state.initializeItems);
@@ -35,6 +37,9 @@ function App() {
   const initializeCategories = useCategoryStore(
     (state) => state.initializeCategories,
   );
+  const initializeCustomers = useCustomerStore(
+    (state) => state.initializeCustomers,
+  );
 
   useEffect(() => {
     // Initialize dummy data on app start
@@ -42,11 +47,13 @@ function App() {
     initializeUsers();
     initializeBusinessData();
     initializeCategories();
+    initializeCustomers();
   }, [
     initializeItems,
     initializeUsers,
     initializeBusinessData,
     initializeCategories,
+    initializeCustomers,
   ]);
 
   return (
@@ -65,6 +72,7 @@ function App() {
           <Route path={ROUTES.ORDER_DETAIL} element={<OrderDetailPage />} />
           <Route path={ROUTES.ITEMS} element={<ItemsPage />} />
           <Route path={ROUTES.CATEGORIES} element={<CategoriesPage />} />
+          <Route path={ROUTES.CUSTOMERS} element={<CustomersPage />} />
           <Route path={ROUTES.USERS} element={<UsersPage />} />
           <Route path={ROUTES.ORGANIZATIONS} element={<BusinessesPage />} />
           <Route path={ROUTES.BRANCHES} element={<BranchesPage />} />

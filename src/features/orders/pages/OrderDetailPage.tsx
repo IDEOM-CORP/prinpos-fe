@@ -9,21 +9,63 @@ import {
   Button,
   Divider,
   Grid,
+  Modal,
+  NumberInput,
+  Select,
+  Textarea,
+  Paper,
+  Progress,
+  Timeline,
+  ThemeIcon,
 } from "@mantine/core";
-import { IconArrowLeft } from "@tabler/icons-react";
+import { useForm } from "@mantine/form";
+import { useDisclosure } from "@mantine/hooks";
+import { notifications } from "@mantine/notifications";
+import {
+  IconArrowLeft,
+  IconCash,
+  IconCreditCard,
+  IconCheck,
+  IconAlertTriangle,
+  IconClock,
+} from "@tabler/icons-react";
 import { useOrderStore } from "../../../shared/stores/orderStore";
 import { useUserStore } from "../../../shared/stores/userStore";
+import { useAuthStore } from "../../../shared/stores/authStore";
 import { useBusinessStore } from "../../../shared/stores/businessStore";
 import { formatCurrency, formatDateTime } from "../../../shared/utils";
 import { ROUTES } from "../../../core/routes";
-import type { Order } from "../../../shared/types";
+import { MIN_DP_PERCENT } from "../../../shared/constants";
+import type { Order, DpStatus, PaymentRecord } from "../../../shared/types";
 
 export default function OrderDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const order = useOrderStore((state) => state.getOrderById(id!));
+  const addPayment = useOrderStore((state) => state.addPayment);
+  const isProductionReady = useOrderStore((state) => state.isProductionReady);
   const users = useUserStore((state) => state.users);
+  const currentUser = useAuthStore((state) => state.user);
   const branches = useBusinessStore((state) => state.branches);
+
+  const [paymentOpened, { open: openPayment, close: closePayment }] =
+    useDisclosure(false);
+
+  const paymentForm = useForm({
+    initialValues: {
+      amount: 0,
+      method: "cash",
+      note: "",
+    },
+    validate: {
+      amount: (value) => {
+        if (value <= 0) return "Jumlah harus lebih dari 0";
+        if (order && value > order.remainingPayment)
+          return "Jumlah melebihi sisa tagihan";
+        return null;
+      },
+    },
+  });
 
   if (!order) {
     return (
@@ -40,6 +82,13 @@ export default function OrderDetailPage() {
     ? users.find((u) => u.id === order.assignedTo)
     : null;
   const branch = branches.find((b) => b.id === order.branchId);
+  const payments: PaymentRecord[] = order.payments || [];
+  const productionReady = isProductionReady(order.id);
+  const dpStatus: DpStatus = order.dpStatus || "none";
+  const minDpAmount =
+    order.total * ((order.minDpPercent || MIN_DP_PERCENT) / 100);
+  const paymentProgress =
+    order.total > 0 ? (order.paidAmount / order.total) * 100 : 0;
 
   const getStatusColor = (status: Order["status"]) => {
     switch (status) {
@@ -71,6 +120,57 @@ export default function OrderDetailPage() {
     }
   };
 
+  const getDpStatusColor = (s: DpStatus) => {
+    switch (s) {
+      case "paid":
+        return "green";
+      case "sufficient":
+        return "teal";
+      case "insufficient":
+        return "red";
+      default:
+        return "gray";
+    }
+  };
+
+  const getDpStatusLabel = (s: DpStatus) => {
+    switch (s) {
+      case "paid":
+        return "Lunas";
+      case "sufficient":
+        return "DP Cukup";
+      case "insufficient":
+        return "DP Kurang";
+      case "none":
+        return "Belum Bayar";
+      default:
+        return s;
+    }
+  };
+
+  const handlePayment = (values: typeof paymentForm.values) => {
+    if (!currentUser) return;
+    addPayment(
+      order.id,
+      values.amount,
+      values.method,
+      currentUser.id,
+      values.note || undefined,
+    );
+    notifications.show({
+      title: "Pembayaran Berhasil",
+      message: `Pembayaran ${formatCurrency(values.amount)} telah dicatat`,
+      color: "green",
+    });
+    paymentForm.reset();
+    closePayment();
+  };
+
+  const handlePayFull = () => {
+    if (!order) return;
+    paymentForm.setFieldValue("amount", order.remainingPayment);
+  };
+
   return (
     <>
       <Button
@@ -83,6 +183,7 @@ export default function OrderDetailPage() {
       </Button>
 
       <Grid>
+        {/* Left Column: Order Detail */}
         <Grid.Col span={{ base: 12, md: 8 }}>
           <Card shadow="sm" padding="lg" radius="md" withBorder>
             <Stack gap="lg">
@@ -93,9 +194,20 @@ export default function OrderDetailPage() {
                     {formatDateTime(order.createdAt)}
                   </Text>
                 </div>
-                <Badge size="lg" color={getStatusColor(order.status)}>
-                  {getStatusLabel(order.status)}
-                </Badge>
+                <Group gap="xs">
+                  <Badge size="lg" color={getStatusColor(order.status)}>
+                    {getStatusLabel(order.status)}
+                  </Badge>
+                  {order.paymentType === "dp" && (
+                    <Badge
+                      size="lg"
+                      color={getDpStatusColor(dpStatus)}
+                      variant="outline"
+                    >
+                      {getDpStatusLabel(dpStatus)}
+                    </Badge>
+                  )}
+                </Group>
               </Group>
 
               <Divider />
@@ -158,8 +270,10 @@ export default function OrderDetailPage() {
           </Card>
         </Grid.Col>
 
+        {/* Right Column: Summary, Payment, Info */}
         <Grid.Col span={{ base: 12, md: 4 }}>
           <Stack gap="md">
+            {/* Summary Card */}
             <Card shadow="sm" padding="lg" radius="md" withBorder>
               <Text size="sm" fw={500} c="dimmed" mb="md">
                 RINGKASAN
@@ -185,6 +299,198 @@ export default function OrderDetailPage() {
               </Stack>
             </Card>
 
+            {/* Payment Status Card */}
+            <Card shadow="sm" padding="lg" radius="md" withBorder>
+              <Text size="sm" fw={500} c="dimmed" mb="md">
+                STATUS PEMBAYARAN
+              </Text>
+              <Stack gap="sm">
+                {/* Progress bar */}
+                <div>
+                  <Group justify="space-between" mb={4}>
+                    <Text size="xs" c="dimmed">
+                      Terbayar
+                    </Text>
+                    <Text size="xs" fw={600}>
+                      {Math.round(paymentProgress)}%
+                    </Text>
+                  </Group>
+                  <Progress
+                    value={paymentProgress}
+                    color={
+                      paymentProgress >= 100
+                        ? "green"
+                        : paymentProgress >=
+                            (order.minDpPercent || MIN_DP_PERCENT)
+                          ? "teal"
+                          : "orange"
+                    }
+                    size="lg"
+                    radius="xl"
+                  />
+                  {order.paymentType === "dp" && (
+                    <Progress.Root size={4} mt={2} radius="xl">
+                      <Progress.Section
+                        value={order.minDpPercent || MIN_DP_PERCENT}
+                        color="transparent"
+                      />
+                    </Progress.Root>
+                  )}
+                </div>
+
+                <Group justify="space-between">
+                  <Text size="sm">Sudah dibayar:</Text>
+                  <Text size="sm" fw={600} c="green">
+                    {formatCurrency(order.paidAmount)}
+                  </Text>
+                </Group>
+                <Group justify="space-between">
+                  <Text size="sm">Sisa tagihan:</Text>
+                  <Text
+                    size="sm"
+                    fw={600}
+                    c={order.remainingPayment > 0 ? "red" : "green"}
+                  >
+                    {order.remainingPayment > 0
+                      ? formatCurrency(order.remainingPayment)
+                      : "—"}
+                  </Text>
+                </Group>
+
+                {order.paymentType === "dp" && (
+                  <>
+                    <Divider />
+                    <Group justify="space-between">
+                      <Text size="sm">Tipe:</Text>
+                      <Badge size="sm" variant="light">
+                        DP (Uang Muka)
+                      </Badge>
+                    </Group>
+                    <Group justify="space-between">
+                      <Text size="sm">
+                        DP Minimum ({order.minDpPercent || MIN_DP_PERCENT}%):
+                      </Text>
+                      <Text size="sm" fw={500}>
+                        {formatCurrency(minDpAmount)}
+                      </Text>
+                    </Group>
+                    <Group justify="space-between">
+                      <Text size="sm">Status DP:</Text>
+                      <Badge color={getDpStatusColor(dpStatus)} size="sm">
+                        {getDpStatusLabel(dpStatus)}
+                      </Badge>
+                    </Group>
+
+                    {/* Production readiness indicator */}
+                    <Paper
+                      p="xs"
+                      bg={productionReady ? "teal.0" : "red.0"}
+                      style={{ borderRadius: 8 }}
+                    >
+                      <Group gap="xs">
+                        {productionReady ? (
+                          <IconCheck
+                            size={16}
+                            color="var(--mantine-color-teal-6)"
+                          />
+                        ) : (
+                          <IconAlertTriangle
+                            size={16}
+                            color="var(--mantine-color-red-6)"
+                          />
+                        )}
+                        <Text
+                          size="xs"
+                          fw={500}
+                          c={productionReady ? "teal.7" : "red.7"}
+                        >
+                          {productionReady
+                            ? "Produksi siap dimulai"
+                            : `DP kurang ${formatCurrency(minDpAmount - order.paidAmount)} untuk mulai produksi`}
+                        </Text>
+                      </Group>
+                    </Paper>
+                  </>
+                )}
+
+                {order.paymentMethod && (
+                  <Group justify="space-between">
+                    <Text size="sm">Metode:</Text>
+                    <Text size="sm" fw={500} tt="capitalize">
+                      {order.paymentMethod}
+                    </Text>
+                  </Group>
+                )}
+
+                {/* Pelunasan Button */}
+                {order.remainingPayment > 0 &&
+                  order.paymentStatus !== "paid" && (
+                    <Button
+                      fullWidth
+                      mt="sm"
+                      leftSection={<IconCash size={18} />}
+                      color="green"
+                      onClick={openPayment}
+                    >
+                      Terima Pembayaran / Pelunasan
+                    </Button>
+                  )}
+              </Stack>
+            </Card>
+
+            {/* Payment History Card */}
+            {payments.length > 0 && (
+              <Card shadow="sm" padding="lg" radius="md" withBorder>
+                <Text size="sm" fw={500} c="dimmed" mb="md">
+                  RIWAYAT PEMBAYARAN ({payments.length})
+                </Text>
+                <Timeline
+                  active={payments.length - 1}
+                  bulletSize={24}
+                  lineWidth={2}
+                >
+                  {payments.map((payment, idx) => {
+                    const payer = users.find((u) => u.id === payment.paidBy);
+                    return (
+                      <Timeline.Item
+                        key={payment.id || idx}
+                        bullet={
+                          <ThemeIcon
+                            size={24}
+                            radius="xl"
+                            color={
+                              idx === payments.length - 1 ? "green" : "gray"
+                            }
+                          >
+                            <IconCreditCard size={12} />
+                          </ThemeIcon>
+                        }
+                        title={
+                          <Text size="sm" fw={600}>
+                            {formatCurrency(payment.amount)}
+                          </Text>
+                        }
+                      >
+                        <Text size="xs" c="dimmed">
+                          {payment.method ? payment.method.toUpperCase() : "-"}
+                          {payer ? ` • oleh ${payer.name}` : ""}
+                        </Text>
+                        {payment.note && (
+                          <Text size="xs" c="dimmed" fs="italic">
+                            {payment.note}
+                          </Text>
+                        )}
+                        <Text size="xs" c="dimmed" mt={2}>
+                          {formatDateTime(payment.createdAt)}
+                        </Text>
+                      </Timeline.Item>
+                    );
+                  })}
+                </Timeline>
+              </Card>
+            )}
+
+            {/* Info Card */}
             <Card shadow="sm" padding="lg" radius="md" withBorder>
               <Text size="sm" fw={500} c="dimmed" mb="md">
                 INFORMASI LAINNYA
@@ -214,6 +520,17 @@ export default function OrderDetailPage() {
                     <Text fw={500}>{assignedUser.name}</Text>
                   </div>
                 )}
+                {order.deadline && (
+                  <div>
+                    <Text size="sm" c="dimmed">
+                      Deadline
+                    </Text>
+                    <Group gap="xs">
+                      <IconClock size={14} />
+                      <Text fw={500}>{formatDateTime(order.deadline)}</Text>
+                    </Group>
+                  </div>
+                )}
                 {order.completedAt && (
                   <div>
                     <Text size="sm" c="dimmed">
@@ -227,6 +544,81 @@ export default function OrderDetailPage() {
           </Stack>
         </Grid.Col>
       </Grid>
+
+      {/* Pelunasan Modal */}
+      <Modal
+        opened={paymentOpened}
+        onClose={closePayment}
+        title="Terima Pembayaran"
+        centered
+      >
+        <form onSubmit={paymentForm.onSubmit(handlePayment)}>
+          <Stack gap="md">
+            <Paper p="md" withBorder>
+              <Group justify="space-between">
+                <Text size="sm">Sisa Tagihan:</Text>
+                <Text size="lg" fw={700} c="red">
+                  {formatCurrency(order.remainingPayment)}
+                </Text>
+              </Group>
+            </Paper>
+
+            <NumberInput
+              label="Jumlah Pembayaran"
+              placeholder="Masukkan jumlah"
+              leftSection="Rp"
+              thousandSeparator="."
+              decimalSeparator=","
+              min={1}
+              max={order.remainingPayment}
+              size="lg"
+              required
+              {...paymentForm.getInputProps("amount")}
+            />
+
+            <Button
+              variant="light"
+              size="xs"
+              onClick={handlePayFull}
+              color="green"
+            >
+              Lunasi Semua ({formatCurrency(order.remainingPayment)})
+            </Button>
+
+            <Select
+              label="Metode Pembayaran"
+              data={[
+                { value: "cash", label: "Tunai (Cash)" },
+                { value: "transfer", label: "Transfer Bank" },
+                { value: "qris", label: "QRIS" },
+                { value: "e-wallet", label: "E-Wallet (OVO/GoPay/Dana)" },
+              ]}
+              size="lg"
+              {...paymentForm.getInputProps("method")}
+            />
+
+            <Textarea
+              label="Catatan (opsional)"
+              placeholder="Keterangan pembayaran"
+              rows={2}
+              {...paymentForm.getInputProps("note")}
+            />
+
+            <Group mt="md" grow>
+              <Button variant="outline" onClick={closePayment}>
+                Batal
+              </Button>
+              <Button
+                type="submit"
+                color="green"
+                leftSection={<IconCash size={18} />}
+              >
+                Konfirmasi Pembayaran
+              </Button>
+            </Group>
+          </Stack>
+        </form>
+      </Modal>
     </>
   );
 }

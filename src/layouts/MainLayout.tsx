@@ -25,6 +25,7 @@ import {
   IconLayoutSidebar,
   IconLayoutSidebarLeftCollapse,
   IconCategory,
+  IconUsers,
 } from "@tabler/icons-react";
 import { useAuthStore } from "../shared/stores/authStore";
 import { ROUTES } from "../core/routes";
@@ -82,6 +83,12 @@ export default function MainLayout({ children }: MainLayoutProps) {
       icon: IconCategory,
       path: ROUTES.CATEGORIES,
       roles: ["owner"], // Only owner manages categories
+    },
+    {
+      label: "Pelanggan",
+      icon: IconUsers,
+      path: ROUTES.CUSTOMERS,
+      roles: ["owner", "kasir"], // Owner and kasir can manage customers
     },
     {
       label: "Laporan",

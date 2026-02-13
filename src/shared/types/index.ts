@@ -10,6 +10,18 @@ export type PaymentType = "full" | "dp" | "installment";
 
 export type PaymentStatus = "unpaid" | "partial" | "paid";
 
+export type DpStatus = "none" | "insufficient" | "sufficient" | "paid";
+
+export interface PaymentRecord {
+  id: string;
+  orderId: string;
+  amount: number;
+  method: string; // cash, transfer, qris, e-wallet
+  note?: string;
+  paidBy: string; // userId
+  createdAt: string;
+}
+
 export type PricingModel = "fixed" | "area" | "tiered";
 
 export interface TierPrice {
@@ -62,6 +74,18 @@ export interface Category {
   id: string;
   name: string;
   description?: string;
+  businessId: string;
+  createdAt: string;
+}
+
+export interface Customer {
+  id: string;
+  name: string;
+  phone?: string;
+  email?: string;
+  address?: string;
+  company?: string; // nama perusahaan / instansi
+  notes?: string;
   businessId: string;
   createdAt: string;
 }
@@ -149,10 +173,13 @@ export interface Order {
   // Payment tracking
   paymentType: PaymentType; // full, dp, installment
   paymentStatus: PaymentStatus; // unpaid, partial, paid
+  dpStatus: DpStatus; // none, insufficient, sufficient, paid
   downPayment: number; // Amount paid upfront (DP)
   remainingPayment: number; // Sisa tagihan
   paidAmount: number; // Total yang sudah dibayar
   paymentMethod?: string; // cash, transfer, e-wallet
+  minDpPercent: number; // minimum DP % required (default 50)
+  payments: PaymentRecord[]; // Payment history records
 
   // Production & Delivery
   deadline?: string; // Target completion date

@@ -10,19 +10,24 @@ import {
   Select,
   Grid,
   Divider,
+  Paper,
+  Progress,
+  Tooltip,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { IconCheck, IconClock } from "@tabler/icons-react";
+import { IconCheck, IconClock, IconLock, IconCash } from "@tabler/icons-react";
 import { useOrderStore } from "../../../shared/stores/orderStore";
 import { useAuthStore } from "../../../shared/stores/authStore";
 import { useUserStore } from "../../../shared/stores/userStore";
 import { formatCurrency, formatDateTime } from "../../../shared/utils";
-import type { Order } from "../../../shared/types";
+import { MIN_DP_PERCENT } from "../../../shared/constants";
+import type { Order, DpStatus } from "../../../shared/types";
 
 export default function ProductionPage() {
   const orders = useOrderStore((state) => state.orders);
   const updateOrderStatus = useOrderStore((state) => state.updateOrderStatus);
   const assignOrderToUser = useOrderStore((state) => state.assignOrderToUser);
+  const isProductionReady = useOrderStore((state) => state.isProductionReady);
   const user = useAuthStore((state) => state.user);
   const users = useUserStore((state) => state.users);
 
@@ -118,6 +123,12 @@ export default function ProductionPage() {
             const assignedUser = order.assignedTo
               ? users.find((u) => u.id === order.assignedTo)
               : null;
+            const canStartProduction = isProductionReady(order.id);
+            const dpStatus: DpStatus = order.dpStatus || "none";
+            const minDpAmount =
+              order.total * ((order.minDpPercent || MIN_DP_PERCENT) / 100);
+            const paymentProgress =
+              order.total > 0 ? (order.paidAmount / order.total) * 100 : 0;
 
             return (
               <Grid.Col key={order.id} span={{ base: 12, md: 6 }}>
@@ -132,10 +143,73 @@ export default function ProductionPage() {
                           {formatDateTime(order.createdAt)}
                         </Text>
                       </div>
-                      <Badge color={getStatusColor(order.status)} size="lg">
-                        {getStatusLabel(order.status)}
-                      </Badge>
+                      <Group gap="xs">
+                        <Badge color={getStatusColor(order.status)} size="lg">
+                          {getStatusLabel(order.status)}
+                        </Badge>
+                      </Group>
                     </Group>
+
+                    {/* DP Status Indicator */}
+                    {order.paymentType === "dp" && (
+                      <Paper
+                        p="sm"
+                        bg={canStartProduction ? "teal.0" : "red.0"}
+                        style={{ borderRadius: 8 }}
+                      >
+                        <Group justify="space-between" mb={4}>
+                          <Group gap="xs">
+                            {canStartProduction ? (
+                              <IconCash
+                                size={16}
+                                color="var(--mantine-color-teal-6)"
+                              />
+                            ) : (
+                              <IconLock
+                                size={16}
+                                color="var(--mantine-color-red-6)"
+                              />
+                            )}
+                            <Text
+                              size="xs"
+                              fw={600}
+                              c={canStartProduction ? "teal.7" : "red.7"}
+                            >
+                              {dpStatus === "paid"
+                                ? "Lunas"
+                                : dpStatus === "sufficient"
+                                  ? "DP Cukup"
+                                  : `DP Kurang — Butuh min ${formatCurrency(minDpAmount)}`}
+                            </Text>
+                          </Group>
+                          <Text size="xs" fw={600}>
+                            {formatCurrency(order.paidAmount)} /{" "}
+                            {formatCurrency(order.total)}
+                          </Text>
+                        </Group>
+                        <Progress
+                          value={paymentProgress}
+                          color={canStartProduction ? "teal" : "red"}
+                          size="sm"
+                          radius="xl"
+                        />
+                      </Paper>
+                    )}
+
+                    {order.paymentType === "full" &&
+                      order.paymentStatus === "paid" && (
+                        <Paper p="xs" bg="green.0" style={{ borderRadius: 8 }}>
+                          <Group gap="xs">
+                            <IconCheck
+                              size={14}
+                              color="var(--mantine-color-green-6)"
+                            />
+                            <Text size="xs" fw={500} c="green.7">
+                              Lunas — siap produksi
+                            </Text>
+                          </Group>
+                        </Paper>
+                      )}
 
                     <Divider />
 
@@ -199,14 +273,33 @@ export default function ProductionPage() {
 
                         <Group grow>
                           {order.status === "pending" && (
-                            <Button
-                              leftSection={<IconClock size={16} />}
-                              onClick={() =>
-                                handleStatusUpdate(order.id, "in-progress")
+                            <Tooltip
+                              label={
+                                !canStartProduction
+                                  ? "DP belum mencapai minimum — produksi tidak bisa dimulai"
+                                  : "Mulai proses produksi"
                               }
+                              withArrow
                             >
-                              Mulai Kerjakan
-                            </Button>
+                              <Button
+                                leftSection={
+                                  canStartProduction ? (
+                                    <IconClock size={16} />
+                                  ) : (
+                                    <IconLock size={16} />
+                                  )
+                                }
+                                disabled={!canStartProduction}
+                                color={canStartProduction ? undefined : "gray"}
+                                onClick={() =>
+                                  handleStatusUpdate(order.id, "in-progress")
+                                }
+                              >
+                                {canStartProduction
+                                  ? "Mulai Kerjakan"
+                                  : "DP Belum Cukup"}
+                              </Button>
+                            </Tooltip>
                           )}
 
                           {order.status === "in-progress" && (
