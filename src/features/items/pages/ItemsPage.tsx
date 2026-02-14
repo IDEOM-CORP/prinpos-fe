@@ -12,7 +12,6 @@ import {
   Textarea,
   Card,
   Text,
-  Image,
   Badge,
   ActionIcon,
   SegmentedControl,
@@ -47,11 +46,7 @@ import { useAuthStore } from "../../../shared/stores/authStore";
 import { useFinishingStore } from "../../../shared/stores/finishingStore";
 import { useMaterialStore } from "../../../shared/stores/materialStore";
 import { formatCurrency } from "../../../shared/utils";
-import {
-  DUMMY_IMAGES,
-  UNIT_OPTIONS,
-  AREA_UNIT_OPTIONS,
-} from "../../../shared/constants";
+import { UNIT_OPTIONS, AREA_UNIT_OPTIONS } from "../../../shared/constants";
 import { useCategoryStore } from "../../../shared/stores/categoryStore";
 import type { TierPrice, PricingModel } from "../../../shared/types";
 
@@ -540,7 +535,6 @@ export default function ItemsPage() {
           <Table highlightOnHover>
             <Table.Thead>
               <Table.Tr>
-                <Table.Th>Gambar</Table.Th>
                 <Table.Th>Nama / SKU</Table.Th>
                 <Table.Th>Kategori</Table.Th>
                 <Table.Th>Tipe Harga</Table.Th>
@@ -553,14 +547,6 @@ export default function ItemsPage() {
             <Table.Tbody>
               {filteredItems.map((item) => (
                 <Table.Tr key={item.id} opacity={item.isActive ? 1 : 0.5}>
-                  <Table.Td>
-                    <Image
-                      src={item.imageUrl}
-                      height={50}
-                      width={50}
-                      radius="sm"
-                    />
-                  </Table.Td>
                   <Table.Td>
                     <Text fw={500}>{item.name}</Text>
                     {item.sku && (
@@ -691,27 +677,6 @@ export default function ItemsPage() {
                       data={UNIT_OPTIONS}
                       required
                       {...form.getInputProps("unit")}
-                    />
-                    <Select
-                      label="Gambar"
-                      placeholder="Pilih gambar"
-                      data={Object.entries(DUMMY_IMAGES).map(([key]) => ({
-                        value: key,
-                        label: key.charAt(0).toUpperCase() + key.slice(1),
-                      }))}
-                      value={
-                        Object.entries(DUMMY_IMAGES).find(
-                          ([, url]) => url === form.values.imageUrl,
-                        )?.[0] || ""
-                      }
-                      onChange={(value) => {
-                        if (value) {
-                          form.setFieldValue(
-                            "imageUrl",
-                            DUMMY_IMAGES[value as keyof typeof DUMMY_IMAGES],
-                          );
-                        }
-                      }}
                     />
                   </Group>
 
