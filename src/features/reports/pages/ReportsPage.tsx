@@ -75,19 +75,23 @@ export default function ReportsPage() {
 
   // Total orders
   const totalOrders = orders.length;
-  const pendingOrders = orders.filter((o) => o.status === "pending").length;
-  const inProgressOrders = orders.filter(
-    (o) => o.status === "in-progress",
+  const pendingOrders = orders.filter(
+    (o) => o.status === "pending_dp" || o.status === "ready_production",
   ).length;
-  const completedOrders = orders.filter((o) => o.status === "completed").length;
+  const inProgressOrders = orders.filter(
+    (o) => o.status === "in_progress",
+  ).length;
+  const completedOrders = orders.filter(
+    (o) => o.status === "completed" || o.status === "settled",
+  ).length;
 
   // Revenue
   const totalRevenue = orders
-    .filter((o) => o.status === "completed")
+    .filter((o) => o.status === "completed" || o.status === "settled")
     .reduce((sum, o) => sum + o.total, 0);
 
   const pendingRevenue = orders
-    .filter((o) => o.status === "pending")
+    .filter((o) => o.status === "pending_dp" || o.status === "ready_production")
     .reduce((sum, o) => sum + o.total, 0);
 
   // Average order value
@@ -100,7 +104,7 @@ export default function ReportsPage() {
   } = {};
 
   orders
-    .filter((o) => o.status === "completed")
+    .filter((o) => o.status === "completed" || o.status === "settled")
     .forEach((order) => {
       order.items.forEach((item) => {
         if (!itemSales[item.itemId]) {
@@ -290,9 +294,10 @@ export default function ReportsPage() {
                         <Text
                           size="sm"
                           c={
-                            order.status === "completed"
+                            order.status === "completed" ||
+                            order.status === "settled"
                               ? "green"
-                              : order.status === "in-progress"
+                              : order.status === "in_progress"
                                 ? "aqua"
                                 : "orange"
                           }

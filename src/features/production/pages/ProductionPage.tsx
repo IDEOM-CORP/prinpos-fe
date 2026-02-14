@@ -20,8 +20,12 @@ import { useOrderStore } from "../../../shared/stores/orderStore";
 import { useAuthStore } from "../../../shared/stores/authStore";
 import { useUserStore } from "../../../shared/stores/userStore";
 import { formatCurrency, formatDateTime } from "../../../shared/utils";
-import { MIN_DP_PERCENT } from "../../../shared/constants";
-import type { Order, DpStatus } from "../../../shared/types";
+import {
+  MIN_DP_PERCENT,
+  ORDER_STATUS_LABELS,
+  ORDER_STATUS_COLORS,
+} from "../../../shared/constants";
+import type { DpStatus, OrderStatus } from "../../../shared/types";
 
 export default function ProductionPage() {
   const orders = useOrderStore((state) => state.orders);
@@ -36,20 +40,34 @@ export default function ProductionPage() {
   if (!user) return null;
 
   const productionUsers = users.filter((u) => u.role === "produksi");
-  const productionOrders = orders.filter((o) => o.status !== "cancelled");
+  // Only show production-relevant statuses (not draft, settled, cancelled, expired)
+  const productionOrders = orders.filter(
+    (o) =>
+      !o.isDeleted &&
+      ["ready_production", "in_progress", "completed"].includes(o.status),
+  );
 
   const filteredOrders = productionOrders.filter((o) => {
     if (selectedStatus === "all") return true;
     return o.status === selectedStatus;
   });
 
-  const handleStatusUpdate = (orderId: string, status: Order["status"]) => {
-    updateOrderStatus(orderId, status);
-    notifications.show({
-      title: "Status Diupdate",
-      message: "Status order berhasil diupdate",
-      color: "green",
-    });
+  const handleStatusUpdate = (orderId: string, status: OrderStatus) => {
+    if (!user) return;
+    const success = updateOrderStatus(orderId, status, user.id);
+    if (success) {
+      notifications.show({
+        title: "Status Diupdate",
+        message: `Status order → ${ORDER_STATUS_LABELS[status] || status}`,
+        color: "green",
+      });
+    } else {
+      notifications.show({
+        title: "Gagal",
+        message: "Transisi status tidak diizinkan",
+        color: "red",
+      });
+    }
   };
 
   const handleAssign = (orderId: string, userId: string | null) => {
@@ -63,34 +81,6 @@ export default function ProductionPage() {
     }
   };
 
-  const getStatusColor = (status: Order["status"]) => {
-    switch (status) {
-      case "pending":
-        return "orange";
-      case "in-progress":
-        return "aqua";
-      case "completed":
-        return "green";
-      default:
-        return "gray";
-    }
-  };
-
-  const getStatusLabel = (status: Order["status"]) => {
-    switch (status) {
-      case "pending":
-        return "Menunggu";
-      case "in-progress":
-        return "Dikerjakan";
-      case "completed":
-        return "Selesai";
-      case "cancelled":
-        return "Dibatalkan";
-      default:
-        return status;
-    }
-  };
-
   return (
     <>
       <Group justify="space-between" mb="xl">
@@ -99,8 +89,8 @@ export default function ProductionPage() {
           placeholder="Filter Status"
           data={[
             { value: "all", label: "Semua" },
-            { value: "pending", label: "Menunggu" },
-            { value: "in-progress", label: "Dikerjakan" },
+            { value: "ready_production", label: "Siap Produksi" },
+            { value: "in_progress", label: "Proses" },
             { value: "completed", label: "Selesai" },
           ]}
           value={selectedStatus}
@@ -144,11 +134,39 @@ export default function ProductionPage() {
                         </Text>
                       </div>
                       <Group gap="xs">
-                        <Badge color={getStatusColor(order.status)} size="lg">
-                          {getStatusLabel(order.status)}
+                        <Badge
+                          color={ORDER_STATUS_COLORS[order.status] || "gray"}
+                          size="lg"
+                        >
+                          {ORDER_STATUS_LABELS[order.status] || order.status}
                         </Badge>
                       </Group>
                     </Group>
+
+                    {/* Deadline indicator */}
+                    {order.deadline && (
+                      <Badge
+                        size="sm"
+                        color={
+                          new Date(order.deadline).getTime() - Date.now() <
+                          24 * 60 * 60 * 1000
+                            ? "red"
+                            : new Date(order.deadline).getTime() - Date.now() <
+                                3 * 24 * 60 * 60 * 1000
+                              ? "orange"
+                              : "gray"
+                        }
+                        variant="light"
+                        leftSection={<IconClock size={12} />}
+                      >
+                        Deadline:{" "}
+                        {new Date(order.deadline).toLocaleDateString("id-ID", {
+                          day: "numeric",
+                          month: "short",
+                          year: "numeric",
+                        })}
+                      </Badge>
+                    )}
 
                     {/* DP Status Indicator */}
                     {order.paymentType === "dp" && (
@@ -231,14 +249,42 @@ export default function ProductionPage() {
                       </Text>
                       <Stack gap="xs">
                         {order.items.map((item, idx) => (
-                          <Group key={idx} justify="space-between">
-                            <Text size="sm">
-                              {item.name} x{item.quantity}
-                            </Text>
-                            <Text size="sm" fw={500}>
-                              {formatCurrency(item.price * item.quantity)}
-                            </Text>
-                          </Group>
+                          <Paper
+                            key={idx}
+                            p="xs"
+                            withBorder
+                            style={{ borderRadius: 6 }}
+                          >
+                            <Group justify="space-between" mb={2}>
+                              <Text size="sm" fw={500}>
+                                {item.name} x{item.quantity}
+                              </Text>
+                              <Text size="sm" fw={500}>
+                                {formatCurrency(item.subtotal)}
+                              </Text>
+                            </Group>
+                            {item.width && item.height && (
+                              <Text size="xs" c="dimmed">
+                                Ukuran: {item.width}×{item.height}m ={" "}
+                                {item.area?.toFixed(2)}m²
+                              </Text>
+                            )}
+                            {item.material && (
+                              <Text size="xs" c="dimmed">
+                                Material: {item.material}
+                              </Text>
+                            )}
+                            {item.finishing && item.finishing.length > 0 && (
+                              <Text size="xs" c="dimmed">
+                                Finishing: {item.finishing.join(", ")}
+                              </Text>
+                            )}
+                            {item.notes && (
+                              <Text size="xs" c="dimmed" fs="italic">
+                                {item.notes}
+                              </Text>
+                            )}
+                          </Paper>
                         ))}
                       </Stack>
                     </div>
@@ -272,7 +318,7 @@ export default function ProductionPage() {
                         />
 
                         <Group grow>
-                          {order.status === "pending" && (
+                          {order.status === "ready_production" && (
                             <Tooltip
                               label={
                                 !canStartProduction
@@ -292,7 +338,7 @@ export default function ProductionPage() {
                                 disabled={!canStartProduction}
                                 color={canStartProduction ? undefined : "gray"}
                                 onClick={() =>
-                                  handleStatusUpdate(order.id, "in-progress")
+                                  handleStatusUpdate(order.id, "in_progress")
                                 }
                               >
                                 {canStartProduction
@@ -302,7 +348,7 @@ export default function ProductionPage() {
                             </Tooltip>
                           )}
 
-                          {order.status === "in-progress" && (
+                          {order.status === "in_progress" && (
                             <Button
                               leftSection={<IconCheck size={16} />}
                               color="green"

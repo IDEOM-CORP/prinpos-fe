@@ -46,6 +46,9 @@ export default function ProtectedRoute({
     if (user.role === "produksi") {
       return <Navigate to={ROUTES.PRODUCTION} replace />;
     }
+    if (user.role === "designer") {
+      return <Navigate to={ROUTES.CREATE_ORDER} replace />;
+    }
     return <Navigate to={ROUTES.DASHBOARD} replace />;
   }
 

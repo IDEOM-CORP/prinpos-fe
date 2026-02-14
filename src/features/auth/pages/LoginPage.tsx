@@ -62,6 +62,8 @@ export default function LoginPage() {
         navigate(ROUTES.CASHIER);
       } else if (role === "produksi") {
         navigate(ROUTES.PRODUCTION);
+      } else if (role === "designer") {
+        navigate(ROUTES.CREATE_ORDER);
       } else {
         navigate(ROUTES.DASHBOARD);
       }
@@ -369,6 +371,19 @@ export default function LoginPage() {
                     </Badge>
                     <Text size="xs" c="dimmed">
                       produksi@prinpos.com / password123
+                    </Text>
+                  </Group>
+                  <Group gap="xs" wrap="nowrap">
+                    <Badge
+                      variant="light"
+                      color="indigo"
+                      size="sm"
+                      style={{ minWidth: "80px" }}
+                    >
+                      DESIGNER
+                    </Badge>
+                    <Text size="xs" c="dimmed">
+                      designer@prinpos.com / password123
                     </Text>
                   </Group>
                 </Stack>

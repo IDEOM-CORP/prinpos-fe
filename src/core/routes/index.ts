@@ -16,6 +16,8 @@ export const ROUTES = {
   // Orders
   ORDERS: "/orders",
   ORDER_DETAIL: "/orders/:id",
+  ORDER_INVOICE: "/orders/:id/invoice",
+  CREATE_ORDER: "/create-order",
 
   // Categories
   CATEGORIES: "/categories",
@@ -25,6 +27,16 @@ export const ROUTES = {
 
   // Items
   ITEMS: "/items",
+
+  // Finishing
+  FINISHING: "/finishing",
+  FINISHING_ADD: "/finishing/add",
+  FINISHING_EDIT: "/finishing/edit/:id",
+
+  // Material
+  MATERIAL: "/material",
+  MATERIAL_ADD: "/material/add",
+  MATERIAL_EDIT: "/material/edit/:id",
 
   // Users
   USERS: "/users",

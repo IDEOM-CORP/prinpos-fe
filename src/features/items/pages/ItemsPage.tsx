@@ -37,7 +37,6 @@ import {
   IconTag,
   IconChartBar,
   IconSettings,
-  IconX,
   IconBarcode,
   IconClock,
   IconReceipt,
@@ -45,21 +44,16 @@ import {
 } from "@tabler/icons-react";
 import { useItemStore } from "../../../shared/stores/itemStore";
 import { useAuthStore } from "../../../shared/stores/authStore";
+import { useFinishingStore } from "../../../shared/stores/finishingStore";
+import { useMaterialStore } from "../../../shared/stores/materialStore";
 import { formatCurrency } from "../../../shared/utils";
 import {
   DUMMY_IMAGES,
   UNIT_OPTIONS,
   AREA_UNIT_OPTIONS,
-  MATERIALS,
-  FINISHING_PRICING_TYPES,
 } from "../../../shared/constants";
 import { useCategoryStore } from "../../../shared/stores/categoryStore";
-import type {
-  TierPrice,
-  FinishingOption,
-  FinishingPricingType,
-  PricingModel,
-} from "../../../shared/types";
+import type { TierPrice, PricingModel } from "../../../shared/types";
 
 interface FormValues {
   name: string;
@@ -76,8 +70,8 @@ interface FormValues {
   defaultWidth: number;
   defaultHeight: number;
   tiers: TierPrice[];
-  finishingOptions: FinishingOption[];
-  materialOptions: string[];
+  finishingIds: string[];
+  materialIds: string[];
   minOrder: number;
   setupFee: number;
   maxDiscount: number;
@@ -94,6 +88,8 @@ export default function ItemsPage() {
   const user = useAuthStore((state) => state.user);
   const categories = useCategoryStore((state) => state.categories);
   const categoryNames = categories.map((c) => c.name);
+  const finishings = useFinishingStore((state) => state.finishings);
+  const materials = useMaterialStore((state) => state.materials);
 
   const [opened, { open, close }] = useDisclosure(false);
   const [editingItem, setEditingItem] = useState<string | null>(null);
@@ -101,11 +97,16 @@ export default function ItemsPage() {
   const [filterCategory, setFilterCategory] = useState<string | null>(null);
   const [filterPricing, setFilterPricing] = useState<string | null>(null);
 
-  // Finishing option temp fields
-  const [newFinishName, setNewFinishName] = useState("");
-  const [newFinishPrice, setNewFinishPrice] = useState<number>(0);
-  const [newFinishPricingType, setNewFinishPricingType] =
-    useState<FinishingPricingType>("per_unit");
+  // Finishing/material select data from stores
+  const finishingSelectData = finishings
+    .filter((f) => f.isActive)
+    .map((f) => ({
+      value: f.id,
+      label: `${f.name} (+${formatCurrency(f.price)})`,
+    }));
+  const materialSelectData = materials
+    .filter((m) => m.isActive)
+    .map((m) => ({ value: m.id, label: m.name }));
 
   const form = useForm<FormValues>({
     initialValues: {
@@ -123,8 +124,8 @@ export default function ItemsPage() {
       defaultWidth: 0,
       defaultHeight: 0,
       tiers: [{ minQty: 1, maxQty: 10, price: 0 }],
-      finishingOptions: [],
-      materialOptions: [],
+      finishingIds: [],
+      materialIds: [],
       minOrder: 1,
       setupFee: 0,
       maxDiscount: 100,
@@ -213,7 +214,9 @@ export default function ItemsPage() {
     const subtotal = baseUnit * qty;
     let finishingTotal = 0;
     const finishingLines: string[] = [];
-    for (const fo of form.values.finishingOptions) {
+    for (const fId of form.values.finishingIds) {
+      const fo = finishings.find((f) => f.id === fId);
+      if (!fo) continue;
       let fCost = 0;
       if (fo.pricingType === "per_unit") {
         fCost = fo.price * qty;
@@ -245,9 +248,10 @@ export default function ItemsPage() {
     form.values.defaultWidth,
     form.values.defaultHeight,
     form.values.tiers,
-    form.values.finishingOptions,
+    form.values.finishingIds,
     form.values.setupFee,
     form.values.unit,
+    finishings,
   ]);
 
   const handleOpenModal = (itemId?: string) => {
@@ -272,8 +276,13 @@ export default function ItemsPage() {
             item.tiers && item.tiers.length > 0
               ? item.tiers
               : [{ minQty: 1, maxQty: 10, price: 0 }],
-          finishingOptions: item.finishingOptions || [],
-          materialOptions: item.materialOptions || [],
+          finishingIds: (item.finishingOptions || []).map((fo) => fo.id),
+          materialIds: (item.materialOptions || [])
+            .map((name) => {
+              const mat = materials.find((m) => m.name === name);
+              return mat?.id || "";
+            })
+            .filter(Boolean),
           minOrder: item.minOrder || 1,
           setupFee: item.setupFee || 0,
           maxDiscount: item.maxDiscount ?? 100,
@@ -287,9 +296,6 @@ export default function ItemsPage() {
       form.reset();
       setEditingItem(null);
     }
-    setNewFinishName("");
-    setNewFinishPrice(0);
-    setNewFinishPricingType("per_unit");
     open();
   };
 
@@ -326,11 +332,34 @@ export default function ItemsPage() {
           ? values.defaultHeight
           : undefined,
       finishingOptions:
-        values.finishingOptions.length > 0
-          ? values.finishingOptions
+        values.finishingIds.length > 0
+          ? (values.finishingIds
+              .map((fId) => {
+                const f = finishings.find((fin) => fin.id === fId);
+                if (!f) return null;
+                return {
+                  id: f.id,
+                  name: f.name,
+                  price: f.price,
+                  pricingType: f.pricingType,
+                };
+              })
+              .filter(Boolean) as {
+              id: string;
+              name: string;
+              price: number;
+              pricingType: "per_unit" | "per_area" | "flat";
+            }[])
           : undefined,
       materialOptions:
-        values.materialOptions.length > 0 ? values.materialOptions : undefined,
+        values.materialIds.length > 0
+          ? (values.materialIds
+              .map((mId) => {
+                const m = materials.find((mat) => mat.id === mId);
+                return m?.name || null;
+              })
+              .filter(Boolean) as string[])
+          : undefined,
       minOrder: values.minOrder,
       setupFee: values.setupFee,
       maxDiscount: values.maxDiscount,
@@ -407,31 +436,6 @@ export default function ItemsPage() {
     const newTiers = [...form.values.tiers];
     newTiers[index] = { ...newTiers[index], [field]: value };
     form.setFieldValue("tiers", newTiers);
-  };
-
-  // --- Finishing helpers ---
-  const addFinishing = () => {
-    if (!newFinishName.trim()) return;
-    const newOpt: FinishingOption = {
-      id: `fo-${Date.now()}`,
-      name: newFinishName.trim(),
-      price: newFinishPrice || 0,
-      pricingType: newFinishPricingType,
-    };
-    form.setFieldValue("finishingOptions", [
-      ...form.values.finishingOptions,
-      newOpt,
-    ]);
-    setNewFinishName("");
-    setNewFinishPrice(0);
-    setNewFinishPricingType("per_unit");
-  };
-
-  const removeFinishing = (id: string) => {
-    form.setFieldValue(
-      "finishingOptions",
-      form.values.finishingOptions.filter((f) => f.id !== id),
-    );
   };
 
   // --- Pricing badge helper ---
@@ -981,107 +985,28 @@ export default function ItemsPage() {
                   <MultiSelect
                     label="Opsi Material"
                     placeholder="Pilih material yang tersedia"
-                    data={MATERIALS}
+                    description="Data diambil dari modul Material"
+                    data={materialSelectData}
                     searchable
-                    {...form.getInputProps("materialOptions")}
+                    {...form.getInputProps("materialIds")}
                   />
 
-                  <div>
-                    <Text size="sm" fw={500} mb={4}>
-                      Opsi Finishing
-                    </Text>
-                    <Text size="xs" c="dimmed" mb="xs">
-                      Setiap finishing bisa dikenakan per unit, per m², atau
-                      flat (sekali bayar)
-                    </Text>
+                  <MultiSelect
+                    label="Opsi Finishing"
+                    placeholder="Pilih finishing yang tersedia"
+                    description="Data diambil dari modul Finishing"
+                    data={finishingSelectData}
+                    searchable
+                    {...form.getInputProps("finishingIds")}
+                  />
 
-                    {form.values.finishingOptions.length > 0 && (
-                      <Stack gap={4} mb="xs">
-                        {form.values.finishingOptions.map((fo) => (
-                          <Paper key={fo.id} p="xs" withBorder radius="sm">
-                            <Group justify="space-between">
-                              <Group gap="xs">
-                                <Text size="sm" fw={500}>
-                                  {fo.name}
-                                </Text>
-                                <Badge size="sm" variant="light" color="aqua">
-                                  +{formatCurrency(fo.price)}
-                                </Badge>
-                                <Badge
-                                  size="xs"
-                                  variant="outline"
-                                  color={
-                                    fo.pricingType === "per_area"
-                                      ? "orange"
-                                      : fo.pricingType === "flat"
-                                        ? "gray"
-                                        : "blue"
-                                  }
-                                >
-                                  {fo.pricingType === "per_unit"
-                                    ? "Per Unit"
-                                    : fo.pricingType === "per_area"
-                                      ? "Per m²"
-                                      : "Flat"}
-                                </Badge>
-                              </Group>
-                              <ActionIcon
-                                size="sm"
-                                variant="subtle"
-                                color="red"
-                                onClick={() => removeFinishing(fo.id)}
-                              >
-                                <IconX size={12} />
-                              </ActionIcon>
-                            </Group>
-                          </Paper>
-                        ))}
-                      </Stack>
+                  {finishingSelectData.length === 0 &&
+                    materialSelectData.length === 0 && (
+                      <Text size="xs" c="dimmed" ta="center">
+                        Belum ada data finishing/material. Tambahkan dulu di
+                        menu Finishing atau Material.
+                      </Text>
                     )}
-
-                    <Group grow align="flex-end">
-                      <TextInput
-                        placeholder="Nama finishing"
-                        size="sm"
-                        value={newFinishName}
-                        onChange={(e) =>
-                          setNewFinishName(e.currentTarget.value)
-                        }
-                      />
-                      <NumberInput
-                        placeholder="Harga"
-                        size="sm"
-                        min={0}
-                        prefix="Rp "
-                        thousandSeparator=","
-                        value={newFinishPrice}
-                        onChange={(v) => setNewFinishPrice(Number(v) || 0)}
-                      />
-                      <Select
-                        placeholder="Tipe"
-                        size="sm"
-                        data={FINISHING_PRICING_TYPES.map((t) => ({
-                          value: t.value,
-                          label: t.label,
-                        }))}
-                        value={newFinishPricingType}
-                        onChange={(v) =>
-                          setNewFinishPricingType(
-                            (v as FinishingPricingType) || "per_unit",
-                          )
-                        }
-                      />
-                      <Button
-                        variant="light"
-                        size="sm"
-                        leftSection={<IconPlus size={14} />}
-                        onClick={addFinishing}
-                        disabled={!newFinishName.trim()}
-                      >
-                        Tambah
-                      </Button>
-                    </Group>
-                  </div>
                 </Stack>
               </Paper>
 

@@ -9,9 +9,10 @@ import {
   Card,
   Text,
   ActionIcon,
+  Button,
 } from "@mantine/core";
 import { useNavigate } from "react-router-dom";
-import { IconEye, IconSearch } from "@tabler/icons-react";
+import { IconEye, IconSearch, IconFilePlus } from "@tabler/icons-react";
 import { useOrderStore } from "../../../shared/stores/orderStore";
 import { useUserStore } from "../../../shared/stores/userStore";
 import { useAuthStore } from "../../../shared/stores/authStore";
@@ -20,6 +21,11 @@ import { formatCurrency, formatDateTime } from "../../../shared/utils";
 import { IconBuildingStore } from "@tabler/icons-react";
 import { ROUTES } from "../../../core/routes";
 import type { Order, PaymentStatus, DpStatus } from "../../../shared/types";
+import {
+  ORDER_STATUS_LABELS,
+  ORDER_STATUS_COLORS,
+  DATE_FILTER_OPTIONS,
+} from "../../../shared/constants";
 
 export default function OrdersPage() {
   const navigate = useNavigate();
@@ -31,14 +37,46 @@ export default function OrdersPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [paymentFilter, setPaymentFilter] = useState<string>("all");
+  const [dateFilter, setDateFilter] = useState<string>("all");
+
+  // Filter out soft-deleted orders
+  const activeOrders = allOrders.filter((o) => !o.isDeleted);
 
   // Branch filter: owner uses global filter, others see their branch only
   const branchFilteredOrders =
     user?.role === "owner" && selectedBranchId
-      ? allOrders.filter((o) => o.branchId === selectedBranchId)
+      ? activeOrders.filter((o) => o.branchId === selectedBranchId)
       : user?.role !== "owner"
-        ? allOrders.filter((o) => o.branchId === user?.branchId)
-        : allOrders;
+        ? activeOrders.filter((o) => o.branchId === user?.branchId)
+        : activeOrders;
+
+  // Date filter helper
+  const matchesDateFilter = (orderDate: string): boolean => {
+    if (dateFilter === "all") return true;
+    const now = new Date();
+    const created = new Date(orderDate);
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+
+    switch (dateFilter) {
+      case "today":
+        return created >= today;
+      case "yesterday":
+        return created >= yesterday && created < today;
+      case "this_week": {
+        const startOfWeek = new Date(today);
+        startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay());
+        return created >= startOfWeek;
+      }
+      case "this_month": {
+        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+        return created >= startOfMonth;
+      }
+      default:
+        return true;
+    }
+  };
 
   const filteredOrders = branchFilteredOrders.filter((order) => {
     const matchesSearch =
@@ -48,7 +86,8 @@ export default function OrdersPage() {
       statusFilter === "all" || order.status === statusFilter;
     const matchesPayment =
       paymentFilter === "all" || order.paymentStatus === paymentFilter;
-    return matchesSearch && matchesStatus && matchesPayment;
+    const matchesDate = matchesDateFilter(order.createdAt);
+    return matchesSearch && matchesStatus && matchesPayment && matchesDate;
   });
 
   const getPaymentStatusColor = (status: PaymentStatus) => {
@@ -106,64 +145,53 @@ export default function OrdersPage() {
     }
   };
 
-  const getStatusColor = (status: Order["status"]) => {
-    switch (status) {
-      case "pending":
-        return "orange";
-      case "in-progress":
-        return "aqua";
-      case "completed":
-        return "green";
-      case "cancelled":
-        return "red";
-      default:
-        return "gray";
-    }
-  };
-
-  const getStatusLabel = (status: Order["status"]) => {
-    switch (status) {
-      case "pending":
-        return "Menunggu";
-      case "in-progress":
-        return "Dikerjakan";
-      case "completed":
-        return "Selesai";
-      case "cancelled":
-        return "Dibatalkan";
-      default:
-        return status;
-    }
-  };
+  // Build status filter options from constants
+  const statusFilterData = [
+    { value: "all", label: "Semua Status" },
+    ...Object.entries(ORDER_STATUS_LABELS).map(([value, label]) => ({
+      value,
+      label,
+    })),
+  ];
 
   return (
     <>
       <Group justify="space-between" align="center" mb="xl">
         <Title order={2}>Daftar Orders</Title>
-        {user?.role === "owner" && (
-          <Select
-            placeholder="Semua Cabang"
-            data={[
-              { value: "", label: "Semua Cabang" },
-              ...branches
-                .filter((b) => user && b.businessId === user.businessId)
-                .map((b) => ({ value: b.id, label: b.name })),
-            ]}
-            value={selectedBranchId}
-            onChange={(value) => setSelectedBranchId(value || "")}
-            leftSection={<IconBuildingStore size={16} />}
-            size="sm"
-            style={{ width: 220 }}
-            clearable={false}
-            allowDeselect={false}
-          />
-        )}
+        <Group>
+          {(user?.role === "designer" || user?.role === "owner") && (
+            <Button
+              leftSection={<IconFilePlus size={16} />}
+              onClick={() => navigate(ROUTES.CREATE_ORDER)}
+            >
+              Buat Order
+            </Button>
+          )}
+          {user?.role === "owner" && (
+            <Select
+              placeholder="Semua Cabang"
+              data={[
+                { value: "", label: "Semua Cabang" },
+                ...branches
+                  .filter((b) => user && b.businessId === user.businessId)
+                  .map((b) => ({ value: b.id, label: b.name })),
+              ]}
+              value={selectedBranchId}
+              onChange={(value) => setSelectedBranchId(value || "")}
+              leftSection={<IconBuildingStore size={16} />}
+              size="sm"
+              style={{ width: 220 }}
+              clearable={false}
+              allowDeselect={false}
+            />
+          )}
+        </Group>
       </Group>
 
       <Card shadow="sm" padding="lg" radius="md" withBorder mb="xl">
         <Group>
           <TextInput
-            placeholder="Cari order..."
+            placeholder="Cari no. order / pelanggan..."
             leftSection={<IconSearch size={16} />}
             value={search}
             onChange={(e) => setSearch(e.currentTarget.value)}
@@ -171,13 +199,7 @@ export default function OrdersPage() {
           />
           <Select
             placeholder="Filter Status"
-            data={[
-              { value: "all", label: "Semua Status" },
-              { value: "pending", label: "Menunggu" },
-              { value: "in-progress", label: "Dikerjakan" },
-              { value: "completed", label: "Selesai" },
-              { value: "cancelled", label: "Dibatalkan" },
-            ]}
+            data={statusFilterData}
             value={statusFilter}
             onChange={(value) => setStatusFilter(value || "all")}
             style={{ width: 200 }}
@@ -193,6 +215,16 @@ export default function OrdersPage() {
             value={paymentFilter}
             onChange={(value) => setPaymentFilter(value || "all")}
             style={{ width: 200 }}
+          />
+          <Select
+            placeholder="Filter Waktu"
+            data={DATE_FILTER_OPTIONS.map((o) => ({
+              value: o.value,
+              label: o.label,
+            }))}
+            value={dateFilter}
+            onChange={(value) => setDateFilter(value || "all")}
+            style={{ width: 180 }}
           />
         </Group>
       </Card>
@@ -215,6 +247,7 @@ export default function OrdersPage() {
                 <Table.Th>Pembayaran</Table.Th>
                 <Table.Th>Sisa</Table.Th>
                 <Table.Th>Status</Table.Th>
+                <Table.Th>Deadline</Table.Th>
                 <Table.Th>Aksi</Table.Th>
               </Table.Tr>
             </Table.Thead>
@@ -278,9 +311,38 @@ export default function OrdersPage() {
                       )}
                     </Table.Td>
                     <Table.Td>
-                      <Badge color={getStatusColor(order.status)}>
-                        {getStatusLabel(order.status)}
+                      <Badge
+                        color={ORDER_STATUS_COLORS[order.status] || "gray"}
+                      >
+                        {ORDER_STATUS_LABELS[order.status] || order.status}
                       </Badge>
+                    </Table.Td>
+                    <Table.Td>
+                      {order.deadline ? (
+                        <Badge
+                          size="sm"
+                          color={
+                            new Date(order.deadline).getTime() - Date.now() <
+                            24 * 60 * 60 * 1000
+                              ? "red"
+                              : "gray"
+                          }
+                          variant="light"
+                        >
+                          {new Date(order.deadline).toLocaleDateString(
+                            "id-ID",
+                            {
+                              day: "numeric",
+                              month: "short",
+                              year: "numeric",
+                            },
+                          )}
+                        </Badge>
+                      ) : (
+                        <Text size="xs" c="dimmed">
+                          -
+                        </Text>
+                      )}
                     </Table.Td>
                     <Table.Td>
                       <ActionIcon

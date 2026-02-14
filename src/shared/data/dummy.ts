@@ -9,6 +9,8 @@ export const dummyBusinesses: Business[] = [
     phone: "021-12345678",
     email: "info@prinpos.com",
     createdAt: "2024-01-01T00:00:00.000Z",
+    taxEnabled: true,
+    taxRate: 0.11,
   },
 ];
 
@@ -97,6 +99,17 @@ export const dummyUsers: User[] = [
     businessId: "org-1",
     phone: "081234567894",
     createdAt: "2024-01-10T00:00:00.000Z",
+  },
+  {
+    id: "user-6",
+    name: "Dani Designer",
+    email: "designer@prinpos.com",
+    password: "password123",
+    role: "designer",
+    branchId: "branch-1",
+    businessId: "org-1",
+    phone: "081234567895",
+    createdAt: "2024-02-01T00:00:00.000Z",
   },
   {
     id: "superadmin-1",

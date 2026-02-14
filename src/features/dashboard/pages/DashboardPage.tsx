@@ -78,13 +78,17 @@ export default function DashboardPage() {
     : allUsers;
 
   const totalOrders = orders.length;
-  const pendingOrders = orders.filter((o) => o.status === "pending").length;
-  const inProgressOrders = orders.filter(
-    (o) => o.status === "in-progress",
+  const pendingOrders = orders.filter(
+    (o) => o.status === "pending_dp" || o.status === "ready_production",
   ).length;
-  const completedOrders = orders.filter((o) => o.status === "completed").length;
+  const inProgressOrders = orders.filter(
+    (o) => o.status === "in_progress",
+  ).length;
+  const completedOrders = orders.filter(
+    (o) => o.status === "completed" || o.status === "settled",
+  ).length;
   const totalRevenue = orders
-    .filter((o) => o.status === "completed")
+    .filter((o) => o.status === "completed" || o.status === "settled")
     .reduce((sum, o) => sum + o.total, 0);
 
   return (

@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import {
-  Box,
+  Title,
   Card,
   Text,
   Button,
@@ -10,759 +11,441 @@ import {
   Modal,
   Textarea,
   Divider,
-  Tabs,
   Paper,
-  ScrollArea,
-  Flex,
-  Image,
   Select,
   NumberInput,
-  Radio,
   Badge,
+  Table,
+  Progress,
+  Alert,
+  Tabs,
 } from "@mantine/core";
-import { DateInput } from "@mantine/dates";
-import { useForm } from "@mantine/form";
 import { useDisclosure } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
 import {
   IconSearch,
-  IconReceipt,
-  IconCalendar,
-  IconRulerMeasure,
-  IconTag,
-  IconChartBar,
-  IconAlertTriangle,
+  IconCash,
+  IconEye,
+  IconPrinter,
+  IconAlertCircle,
 } from "@tabler/icons-react";
-import type { Item } from "../../../shared/types";
-import { useItemStore } from "../../../shared/stores/itemStore";
-import { useCartStore } from "../../../shared/stores/cartStore";
+import type { Order } from "../../../shared/types";
 import { useOrderStore } from "../../../shared/stores/orderStore";
 import { useAuthStore } from "../../../shared/stores/authStore";
-import { formatCurrency } from "../../../shared/utils";
+import { useBusinessStore } from "../../../shared/stores/businessStore";
+import { formatCurrency, formatDateTime } from "../../../shared/utils";
 import {
-  TAX_RATE,
-  MIN_DP_PERCENT,
+  ORDER_STATUS_LABELS,
+  ORDER_STATUS_COLORS,
   DP_QUICK_OPTIONS,
+  MIN_DP_PERCENT,
 } from "../../../shared/constants";
-import CartItemCard from "../components/CartItemCard";
-import AddProductModal from "../components/AddProductModal";
-import { useCategoryStore } from "../../../shared/stores/categoryStore";
-import { useCustomerStore } from "../../../shared/stores/customerStore";
+import { ROUTES } from "../../../core/routes";
 
 export default function CashierPage() {
-  const categories = useCategoryStore((state) => state.categories);
-  const categoryNames = categories.map((c) => c.name);
-  const items = useItemStore((state) => state.items);
-  const cart = useCartStore((state) => state.items);
-  const addToCart = useCartStore((state) => state.addItem);
-  const removeFromCart = useCartStore((state) => state.removeItem);
-  const updateQuantity = useCartStore((state) => state.updateQuantity);
-  const updateDimensions = useCartStore((state) => state.updateDimensions);
-  const updateMaterial = useCartStore((state) => state.updateMaterial);
-  const updateFinishing = useCartStore((state) => state.updateFinishing);
-  const clearCart = useCartStore((state) => state.clearCart);
-  const getTotal = useCartStore((state) => state.getTotal);
-  const getItemCount = useCartStore((state) => state.getItemCount);
-  const addOrder = useOrderStore((state) => state.addOrder);
-  const user = useAuthStore((state) => state.user);
-  const customers = useCustomerStore((state) => state.customers);
+  const navigate = useNavigate();
+  const orders = useOrderStore((s) => s.getActiveOrders());
+  const addPayment = useOrderStore((s) => s.addPayment);
+  const user = useAuthStore((s) => s.user);
+  const branches = useBusinessStore((s) => s.branches);
 
-  const [checkoutOpened, { open: openCheckout, close: closeCheckout }] =
-    useDisclosure(false);
-  const [
-    productModalOpened,
-    { open: openProductModal, close: closeProductModal },
-  ] = useDisclosure(false);
-  const [selectedProduct, setSelectedProduct] = useState<Item | null>(null);
   const [search, setSearch] = useState("");
-  const [selectedCategory, setSelectedCategory] = useState<string>("Semua");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [branchFilter, setBranchFilter] = useState<string | null>(null);
+  const [paymentModalOpened, { open: openPayment, close: closePayment }] =
+    useDisclosure(false);
+  const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+  const [paymentAmount, setPaymentAmount] = useState<number>(0);
+  const [paymentMethod, setPaymentMethod] = useState("cash");
+  const [paymentNote, setPaymentNote] = useState("");
 
-  const form = useForm({
-    initialValues: {
-      customerId: "",
-      customerPhone: "",
-      paymentType: "full",
-      downPaymentAmount: 0,
-      paymentMethod: "cash",
-      deadline: null as Date | null,
-      notes: "",
-    },
-    validate: {
-      customerId: (value) => (value.trim() ? null : "Pelanggan wajib dipilih"),
-      downPaymentAmount: (value, values) => {
-        if (values.paymentType === "dp") {
-          const total = getTotal() + getTotal() * TAX_RATE;
-          if (value <= 0) return "DP harus lebih dari 0";
-          if (value >= total)
-            return "DP tidak boleh lebih dari atau sama dengan total";
-        }
-        return null;
-      },
-    },
-  });
+  // Orders that need payment attention
+  const payableOrders = useMemo(() => {
+    return orders.filter((order) => {
+      const needsPayment =
+        order.status === "awaiting_payment" ||
+        order.status === "pending_dp" ||
+        (order.status === "completed" && order.remainingPayment > 0);
+      if (!needsPayment) return false;
 
-  const filteredItems = items.filter((item) => {
-    if (!item.isActive) return false;
-    const matchesSearch = item.name
-      .toLowerCase()
-      .includes(search.toLowerCase());
-    const matchesCategory =
-      selectedCategory === "Semua" || item.category === selectedCategory;
-    return matchesSearch && matchesCategory;
-  });
+      const matchSearch =
+        !search ||
+        order.orderNumber.toLowerCase().includes(search.toLowerCase()) ||
+        order.customerName.toLowerCase().includes(search.toLowerCase());
+      const matchBranch = !branchFilter || order.branchId === branchFilter;
+      const matchStatus =
+        statusFilter === "all" || order.status === statusFilter;
 
-  const subtotal = getTotal();
-  const tax = subtotal * TAX_RATE;
-  const total = subtotal + tax;
+      return matchSearch && matchBranch && matchStatus;
+    });
+  }, [orders, search, branchFilter, statusFilter]);
 
-  const handleProductClick = (item: Item) => {
-    // Area-based and tiered products need the modal for input
-    const needsModal =
-      item.pricingModel === "area" ||
-      item.pricingModel === "tiered" ||
-      (item.finishingOptions && item.finishingOptions.length > 0) ||
-      (item.materialOptions && item.materialOptions.length > 0);
-
-    if (needsModal) {
-      setSelectedProduct(item);
-      openProductModal();
-    } else {
-      // Simple fixed price products can be added directly
-      addToCart(item);
-    }
+  const openPaymentModal = (order: Order) => {
+    setSelectedOrder(order);
+    setPaymentAmount(0);
+    setPaymentMethod("cash");
+    setPaymentNote("");
+    openPayment();
   };
 
-  const handleAddProduct = (options: {
-    quantity: number;
-    width?: number;
-    height?: number;
-    material?: string;
-    finishing?: string[];
-  }) => {
-    if (!selectedProduct) return;
-    addToCart(selectedProduct, options.quantity, {
-      width: options.width,
-      height: options.height,
-      material: options.material,
-      finishing: options.finishing,
-    });
-  };
+  const handlePayment = () => {
+    if (!selectedOrder || !user || paymentAmount <= 0) return;
 
-  const handleCheckout = (values: typeof form.values) => {
-    if (cart.length === 0) {
-      notifications.show({
-        title: "Keranjang Kosong",
-        message: "Silakan tambahkan barang terlebih dahulu",
-        color: "orange",
-      });
-      return;
-    }
+    addPayment(
+      selectedOrder.id,
+      paymentAmount,
+      paymentMethod,
+      user.id,
+      paymentNote || undefined,
+    );
 
-    if (!user) return;
-
-    const selectedCustomer = customers.find((c) => c.id === values.customerId);
-    const customerName = selectedCustomer?.name || "Walk-in";
-    const customerPhone = values.customerPhone || selectedCustomer?.phone || "";
-
-    const paymentType = values.paymentType as "full" | "dp" | "installment";
-    const downPayment =
-      paymentType === "full" ? total : values.downPaymentAmount;
-    const remainingPayment = paymentType === "full" ? 0 : total - downPayment;
-    const paymentStatus = paymentType === "full" ? "paid" : "partial";
-
-    // Compute initial dpStatus
-    const minDpAmount = total * (MIN_DP_PERCENT / 100);
-    let dpStatus: "none" | "insufficient" | "sufficient" | "paid";
-    if (paymentType === "full") {
-      dpStatus = "paid";
-    } else if (downPayment >= total) {
-      dpStatus = "paid";
-    } else if (downPayment >= minDpAmount) {
-      dpStatus = "sufficient";
-    } else if (downPayment > 0) {
-      dpStatus = "insufficient";
-    } else {
-      dpStatus = "none";
-    }
-
-    // Create initial payment record
-    const initialPayment = {
-      id: Date.now().toString(36) + Math.random().toString(36).substring(2),
-      orderId: "", // will be set after order creation
-      amount: downPayment,
-      method: values.paymentMethod,
-      paidBy: user.id,
-      createdAt: new Date().toISOString(),
-    };
-
-    const order = addOrder({
-      customerId: values.customerId || undefined,
-      customerName,
-      customerPhone,
-      items: cart.map((c) => ({
-        itemId: c.item.id,
-        name: c.item.name,
-        category: c.item.category,
-        width: c.width,
-        height: c.height,
-        area: c.area,
-        material: c.material,
-        finishing: c.finishing,
-        pricePerSqm: c.item.pricePerSqm,
-        price:
-          c.item.pricingModel === "area" && c.area && c.item.pricePerSqm
-            ? c.area * c.item.pricePerSqm
-            : c.item.price,
-        quantity: c.quantity,
-        subtotal:
-          c.item.pricingModel === "area" && c.area && c.item.pricePerSqm
-            ? c.area * c.item.pricePerSqm * c.quantity
-            : c.item.price * c.quantity,
-        notes: c.notes,
-      })),
-      subtotal,
-      tax,
-      total,
-      paymentType,
-      paymentStatus,
-      dpStatus,
-      downPayment,
-      remainingPayment,
-      paidAmount: downPayment,
-      paymentMethod: values.paymentMethod,
-      minDpPercent: MIN_DP_PERCENT,
-      payments: [initialPayment],
-      deadline: values.deadline
-        ? values.deadline instanceof Date
-          ? values.deadline.toISOString()
-          : new Date(values.deadline).toISOString()
-        : undefined,
-      status: "pending",
-      branchId: user.branchId,
-      businessId: user.businessId,
-      createdBy: user.id,
-      notes: values.notes,
-    });
-
-    const dpStatusLabel =
-      dpStatus === "insufficient" ? " ⚠️ DP belum cukup untuk produksi" : "";
     notifications.show({
-      title: "Order Berhasil",
-      message: `Order ${order.orderNumber} telah dibuat${paymentType === "dp" ? " dengan DP " + formatCurrency(downPayment) + " — Sisa: " + formatCurrency(remainingPayment) + dpStatusLabel : ""}`,
-      color: dpStatus === "insufficient" ? "orange" : "green",
+      title: "Pembayaran Diterima",
+      message: `${formatCurrency(paymentAmount)} untuk order ${selectedOrder.orderNumber}`,
+      color: "green",
+      icon: <IconCash size={16} />,
     });
 
-    clearCart();
-    form.reset();
-    closeCheckout();
+    closePayment();
+    setSelectedOrder(null);
   };
+
+  const outletBranches = branches.filter((b) => b.type === "outlet");
+
+  const totalOutstanding = payableOrders.reduce(
+    (sum, o) => sum + o.remainingPayment,
+    0,
+  );
 
   return (
-    <Box
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        height: "calc(100vh - 60px - 2 * var(--mantine-spacing-md))",
-        overflow: "hidden",
-        margin: "calc(-1 * var(--mantine-spacing-md))",
-      }}
-    >
-      {/* Main Cashier Content */}
-      <Box
-        style={{
-          display: "flex",
-          flex: 1,
-          gap: 0,
-          overflow: "hidden",
-        }}
-      >
-        {/* Left Side - Product List */}
-        <Box
-          style={{
-            flex: 1,
-            display: "flex",
-            flexDirection: "column",
-            borderRight: "1px solid var(--mantine-color-gray-3)",
-          }}
+    <Stack gap="lg">
+      <Group justify="space-between">
+        <Title order={2}>Pembayaran</Title>
+        <Badge size="lg" variant="light" color="orange">
+          {payableOrders.length} order menunggu • Outstanding:{" "}
+          {formatCurrency(totalOutstanding)}
+        </Badge>
+      </Group>
+
+      {/* Filters */}
+      <Group>
+        <TextInput
+          placeholder="Cari no. order / pelanggan..."
+          leftSection={<IconSearch size={16} />}
+          value={search}
+          onChange={(e) => setSearch(e.currentTarget.value)}
+          style={{ flex: 1 }}
+        />
+        <Tabs
+          value={statusFilter}
+          onChange={(v) => setStatusFilter(v || "all")}
         >
-          {/* Search Bar */}
-          <Box
-            p="md"
-            style={{ borderBottom: "1px solid var(--mantine-color-gray-3)" }}
-          >
-            <TextInput
-              placeholder="Cari produk..."
-              leftSection={<IconSearch size={18} />}
-              value={search}
-              onChange={(e) => setSearch(e.currentTarget.value)}
-              size="lg"
-              radius="xl"
-            />
-          </Box>
+          <Tabs.List>
+            <Tabs.Tab value="all">Semua</Tabs.Tab>
+            <Tabs.Tab value="awaiting_payment">Menunggu Bayar</Tabs.Tab>
+            <Tabs.Tab value="pending_dp">Menunggu DP</Tabs.Tab>
+            <Tabs.Tab value="completed">Pelunasan</Tabs.Tab>
+          </Tabs.List>
+        </Tabs>
+        {outletBranches.length > 1 && (
+          <Select
+            placeholder="Semua Outlet"
+            data={outletBranches.map((b) => ({ value: b.id, label: b.name }))}
+            value={branchFilter}
+            onChange={setBranchFilter}
+            clearable
+            w={180}
+          />
+        )}
+      </Group>
 
-          {/* Categories */}
-          <Box
-            p="md"
-            style={{ borderBottom: "1px solid var(--mantine-color-gray-3)" }}
-          >
-            <Tabs
-              value={selectedCategory}
-              onChange={(value) => setSelectedCategory(value || "Semua")}
-            >
-              <Tabs.List>
-                <Tabs.Tab value="Semua">Semua</Tabs.Tab>
-                {categoryNames.map((category) => (
-                  <Tabs.Tab key={category} value={category}>
-                    {category}
-                  </Tabs.Tab>
-                ))}
-              </Tabs.List>
-            </Tabs>
-          </Box>
-
-          {/* Product Grid */}
-          <ScrollArea style={{ flex: 1 }} p="md">
-            <Box
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))",
-                gap: "12px",
-              }}
-            >
-              {filteredItems.map((item) => {
-                const cartItem = cart.find((c) => c.item.id === item.id);
-                const quantity = cartItem?.quantity || 0;
+      {/* Orders table */}
+      {payableOrders.length === 0 ? (
+        <Alert
+          color="gray"
+          variant="light"
+          icon={<IconAlertCircle size={16} />}
+        >
+          Tidak ada order yang menunggu pembayaran saat ini.
+        </Alert>
+      ) : (
+        <Card withBorder padding={0}>
+          <Table striped highlightOnHover>
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th>No. Order</Table.Th>
+                <Table.Th>Pelanggan</Table.Th>
+                <Table.Th>Status</Table.Th>
+                <Table.Th>Total</Table.Th>
+                <Table.Th>Dibayar</Table.Th>
+                <Table.Th>Sisa</Table.Th>
+                <Table.Th>Progress</Table.Th>
+                <Table.Th>Deadline</Table.Th>
+                <Table.Th>Aksi</Table.Th>
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              {payableOrders.map((order) => {
+                const paidPercent =
+                  order.total > 0
+                    ? Math.round((order.paidAmount / order.total) * 100)
+                    : 0;
+                const isUrgent =
+                  order.deadline &&
+                  new Date(order.deadline).getTime() - new Date().getTime() <
+                    24 * 60 * 60 * 1000;
 
                 return (
-                  <Card
-                    key={item.id}
-                    shadow="sm"
-                    padding="xs"
-                    radius="md"
-                    withBorder
-                    style={{
-                      cursor: "pointer",
-                      height: "280px",
-                      display: "flex",
-                      flexDirection: "column",
-                      position: "relative",
-                      borderLeft: `3px solid var(--mantine-color-${item.pricingModel === "area" ? "orange" : item.pricingModel === "tiered" ? "violet" : "aqua"}-5)`,
-                    }}
-                    onClick={() => handleProductClick(item)}
-                  >
-                    {quantity > 0 && (
-                      <Box
-                        style={{
-                          position: "absolute",
-                          top: 8,
-                          right: 8,
-                          background: "var(--mantine-color-aqua-6)",
-                          color: "white",
-                          borderRadius: "50%",
-                          width: 24,
-                          height: 24,
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          fontSize: "12px",
-                          fontWeight: 700,
-                          zIndex: 10,
-                        }}
-                      >
-                        {quantity}
-                      </Box>
-                    )}
-
-                    <Card.Section
-                      style={{
-                        position: "relative",
-                        border: "solid 4px",
-                      }}
-                    >
-                      <Image
-                        src={item.imageUrl}
-                        height={100}
-                        alt={item.name}
-                        fit="cover"
-                      />
-                    </Card.Section>
-
-                    <Stack gap={4} mt="xs" style={{ flex: 1 }}>
-                      <Text
-                        fw={600}
-                        size="sm"
-                        lineClamp={2}
-                        style={{ minHeight: "36px" }}
-                      >
-                        {item.name}
+                  <Table.Tr key={order.id}>
+                    <Table.Td>
+                      <Text size="sm" fw={600}>
+                        {order.orderNumber}
                       </Text>
-                      {item.pricingModel === "area" ? (
+                      <Text size="xs" c="dimmed">
+                        {formatDateTime(order.createdAt)}
+                      </Text>
+                    </Table.Td>
+                    <Table.Td>
+                      <Text size="sm">{order.customerName}</Text>
+                    </Table.Td>
+                    <Table.Td>
+                      <Badge
+                        color={ORDER_STATUS_COLORS[order.status]}
+                        variant="light"
+                        size="sm"
+                      >
+                        {ORDER_STATUS_LABELS[order.status]}
+                      </Badge>
+                    </Table.Td>
+                    <Table.Td>
+                      <Text size="sm" fw={500}>
+                        {formatCurrency(order.total)}
+                      </Text>
+                    </Table.Td>
+                    <Table.Td>
+                      <Text size="sm" c="green">
+                        {formatCurrency(order.paidAmount)}
+                      </Text>
+                    </Table.Td>
+                    <Table.Td>
+                      <Text size="sm" c="red" fw={600}>
+                        {formatCurrency(order.remainingPayment)}
+                      </Text>
+                    </Table.Td>
+                    <Table.Td w={120}>
+                      <Progress
+                        value={paidPercent}
+                        size="sm"
+                        color={
+                          paidPercent >= 100
+                            ? "green"
+                            : paidPercent >= 50
+                              ? "aqua"
+                              : "orange"
+                        }
+                      />
+                      <Text size="xs" c="dimmed" ta="center">
+                        {paidPercent}%
+                      </Text>
+                    </Table.Td>
+                    <Table.Td>
+                      {order.deadline ? (
                         <Badge
-                          size="xs"
+                          size="sm"
+                          color={isUrgent ? "red" : "gray"}
                           variant="light"
-                          color="orange"
-                          leftSection={<IconRulerMeasure size={10} />}
                         >
-                          Perlu Ukuran
-                        </Badge>
-                      ) : item.pricingModel === "tiered" ? (
-                        <Badge
-                          size="xs"
-                          variant="light"
-                          color="violet"
-                          leftSection={<IconChartBar size={10} />}
-                        >
-                          Bertingkat
+                          {new Date(order.deadline).toLocaleDateString(
+                            "id-ID",
+                            {
+                              day: "numeric",
+                              month: "short",
+                            },
+                          )}
                         </Badge>
                       ) : (
-                        <Badge
+                        <Text size="xs" c="dimmed">
+                          -
+                        </Text>
+                      )}
+                    </Table.Td>
+                    <Table.Td>
+                      <Group gap="xs">
+                        <Button
+                          size="xs"
+                          leftSection={<IconCash size={14} />}
+                          onClick={() => openPaymentModal(order)}
+                        >
+                          Bayar
+                        </Button>
+                        <Button
                           size="xs"
                           variant="light"
-                          color="aqua"
-                          leftSection={<IconTag size={10} />}
+                          leftSection={<IconEye size={14} />}
+                          onClick={() =>
+                            navigate(
+                              ROUTES.ORDER_DETAIL.replace(":id", order.id),
+                            )
+                          }
                         >
-                          Harga Tetap
-                        </Badge>
-                      )}
-                      <Text size="lg" fw={700} c="aqua">
-                        {item.pricingModel === "area" && item.pricePerSqm
-                          ? `${formatCurrency(item.pricePerSqm)}/${item.areaUnit === "cm" ? "cm²" : "m²"}`
-                          : item.pricingModel === "tiered" &&
-                              item.tiers &&
-                              item.tiers.length > 0
-                            ? `dari ${formatCurrency(Math.min(...item.tiers.map((t) => t.price)))}`
-                            : formatCurrency(item.price)}
-                      </Text>
-                    </Stack>
-                  </Card>
+                          Detail
+                        </Button>
+                        <Button
+                          size="xs"
+                          variant="subtle"
+                          leftSection={<IconPrinter size={14} />}
+                          onClick={() =>
+                            navigate(
+                              ROUTES.ORDER_INVOICE.replace(":id", order.id),
+                            )
+                          }
+                        >
+                          Nota
+                        </Button>
+                      </Group>
+                    </Table.Td>
+                  </Table.Tr>
                 );
               })}
-            </Box>
-          </ScrollArea>
-        </Box>
+            </Table.Tbody>
+          </Table>
+        </Card>
+      )}
 
-        {/* Right Side - Cart & Checkout */}
-        <Box
-          style={{
-            width: "400px",
-            display: "flex",
-            flexDirection: "column",
-            background: "#FAF5EE",
-          }}
-        >
-          {/* Cart Header */}
-          <Box
-            p="md"
-            style={{
-              borderBottom: "1px solid var(--mantine-color-gray-3)",
-              background: "white",
-            }}
-          >
-            <Group justify="space-between">
-              <Group gap="xs">
-                <IconReceipt size={24} />
-                <Text fw={700} size="lg">
-                  Pesanan
+      {/* Payment Modal */}
+      <Modal
+        opened={paymentModalOpened}
+        onClose={closePayment}
+        title="Terima Pembayaran"
+        size="md"
+        centered
+      >
+        {selectedOrder && (
+          <Stack gap="md">
+            <Paper p="md" withBorder>
+              <Group justify="space-between">
+                <Text size="sm" c="dimmed">
+                  Order
+                </Text>
+                <Text fw={600}>{selectedOrder.orderNumber}</Text>
+              </Group>
+              <Group justify="space-between" mt="xs">
+                <Text size="sm" c="dimmed">
+                  Pelanggan
+                </Text>
+                <Text>{selectedOrder.customerName}</Text>
+              </Group>
+              <Divider my="sm" />
+              <Group justify="space-between">
+                <Text size="sm">Total</Text>
+                <Text fw={500}>{formatCurrency(selectedOrder.total)}</Text>
+              </Group>
+              <Group justify="space-between">
+                <Text size="sm">Sudah Dibayar</Text>
+                <Text c="green">
+                  {formatCurrency(selectedOrder.paidAmount)}
                 </Text>
               </Group>
-              {cart.length > 0 && (
-                <Button
-                  variant="subtle"
-                  color="red"
-                  size="xs"
-                  onClick={clearCart}
-                >
-                  Hapus Semua
-                </Button>
-              )}
+              <Group justify="space-between">
+                <Text size="sm" fw={600}>
+                  Sisa Tagihan
+                </Text>
+                <Text c="red" fw={700} size="lg">
+                  {formatCurrency(selectedOrder.remainingPayment)}
+                </Text>
+              </Group>
+            </Paper>
+
+            {/* Quick pay buttons */}
+            <Group gap="xs">
+              <Button
+                size="xs"
+                variant="outline"
+                onClick={() => setPaymentAmount(selectedOrder.remainingPayment)}
+              >
+                Lunasi Semua
+              </Button>
+              {DP_QUICK_OPTIONS.map((pct) => {
+                const amt = Math.round(
+                  selectedOrder.total * (pct / 100) - selectedOrder.paidAmount,
+                );
+                if (amt <= 0 || amt > selectedOrder.remainingPayment)
+                  return null;
+                return (
+                  <Button
+                    key={pct}
+                    size="xs"
+                    variant="outline"
+                    onClick={() => setPaymentAmount(amt)}
+                  >
+                    DP {pct}% ({formatCurrency(amt)})
+                  </Button>
+                );
+              })}
             </Group>
-          </Box>
 
-          {/* Cart Items */}
-          <ScrollArea style={{ flex: 1 }} p="md">
-            {cart.length === 0 ? (
-              <Box
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  height: "100%",
-                  minHeight: "200px",
-                }}
-              >
-                <Text c="dimmed" ta="center">
-                  Belum ada pesanan
-                </Text>
-              </Box>
-            ) : (
-              <Stack gap="sm">
-                {cart.map((cartItem) => (
-                  <CartItemCard
-                    key={cartItem.item.id}
-                    cartItem={cartItem}
-                    onRemove={() => removeFromCart(cartItem.item.id)}
-                    onUpdateQuantity={(qty) =>
-                      updateQuantity(cartItem.item.id, qty)
-                    }
-                    onUpdateDimensions={(w, h) =>
-                      updateDimensions(cartItem.item.id, w, h)
-                    }
-                    onUpdateMaterial={(m) =>
-                      updateMaterial(cartItem.item.id, m)
-                    }
-                    onUpdateFinishing={(f) =>
-                      updateFinishing(cartItem.item.id, f)
-                    }
-                  />
-                ))}
-              </Stack>
-            )}
-          </ScrollArea>
+            <NumberInput
+              label="Jumlah Pembayaran"
+              placeholder="Masukkan jumlah"
+              leftSection="Rp"
+              thousandSeparator="."
+              decimalSeparator=","
+              min={1}
+              max={selectedOrder.remainingPayment}
+              value={paymentAmount}
+              onChange={(v) => setPaymentAmount(Number(v) || 0)}
+              size="lg"
+            />
 
-          {/* Cart Summary & Checkout */}
-          {cart.length > 0 && (
-            <Box
-              p="md"
-              style={{
-                borderTop: "1px solid var(--mantine-color-gray-3)",
-                background: "white",
-              }}
-            >
-              <Stack gap="xs">
-                <Flex justify="space-between">
-                  <Text>Subtotal</Text>
-                  <Text fw={500}>{formatCurrency(subtotal)}</Text>
-                </Flex>
-                <Flex justify="space-between">
-                  <Text size="sm" c="dimmed">
-                    Pajak (11%)
-                  </Text>
-                  <Text size="sm">{formatCurrency(tax)}</Text>
-                </Flex>
-                <Divider my="xs" />
-                <Flex justify="space-between">
-                  <Text size="xl" fw={700}>
-                    Total
-                  </Text>
-                  <Text size="xl" fw={700} c="aqua">
-                    {formatCurrency(total)}
-                  </Text>
-                </Flex>
-                <Button
-                  size="xl"
-                  fullWidth
-                  mt="md"
-                  onClick={openCheckout}
-                  style={{ height: "60px", fontSize: "18px" }}
+            {paymentAmount > 0 &&
+              paymentAmount <
+                Math.round(selectedOrder.total * (MIN_DP_PERCENT / 100)) -
+                  selectedOrder.paidAmount &&
+              selectedOrder.status === "awaiting_payment" && (
+                <Alert
+                  color="orange"
+                  variant="light"
+                  icon={<IconAlertCircle size={16} />}
                 >
-                  Bayar {formatCurrency(total)}
-                </Button>
-              </Stack>
-            </Box>
-          )}
-        </Box>
-
-        {/* Add Product Modal */}
-        <AddProductModal
-          opened={productModalOpened}
-          onClose={closeProductModal}
-          item={selectedProduct}
-          onAdd={handleAddProduct}
-        />
-
-        {/* Checkout Modal */}
-        <Modal
-          opened={checkoutOpened}
-          onClose={closeCheckout}
-          title="Selesaikan Pembayaran"
-          size="lg"
-          centered
-        >
-          <form onSubmit={form.onSubmit(handleCheckout)}>
-            <Stack gap="md">
-              <Paper p="md" withBorder>
-                <Stack gap="xs">
-                  <Flex justify="space-between">
-                    <Text fw={600}>Total Pembayaran</Text>
-                    <Text size="xl" fw={700} c="aqua">
-                      {formatCurrency(total)}
-                    </Text>
-                  </Flex>
-                  <Text size="sm" c="dimmed">
-                    {getItemCount()} item • Subtotal: {formatCurrency(subtotal)}{" "}
-                    + Pajak: {formatCurrency(tax)}
-                  </Text>
-                </Stack>
-              </Paper>
-
-              <Divider label="Data Pelanggan" labelPosition="center" />
-
-              <Select
-                label="Pelanggan"
-                placeholder="Pilih pelanggan"
-                required
-                size="lg"
-                searchable
-                data={customers.map((c) => ({
-                  value: c.id,
-                  label: c.company ? `${c.name} — ${c.company}` : c.name,
-                }))}
-                {...form.getInputProps("customerId")}
-                onChange={(val) => {
-                  form.setFieldValue("customerId", val || "");
-                  // Auto-fill phone from customer data
-                  const cust = customers.find((c) => c.id === val);
-                  if (cust?.phone && cust.phone !== "-") {
-                    form.setFieldValue("customerPhone", cust.phone);
-                  }
-                }}
-              />
-              <TextInput
-                label="No. Telepon"
-                placeholder="08xxxxxxxxxx (otomatis dari data pelanggan)"
-                size="lg"
-                {...form.getInputProps("customerPhone")}
-              />
-
-              <DateInput
-                label="Deadline Pengerjaan (opsional)"
-                placeholder="Pilih tanggal"
-                leftSection={<IconCalendar size={18} />}
-                size="lg"
-                minDate={new Date()}
-                {...form.getInputProps("deadline")}
-              />
-
-              <Divider label="Pembayaran" labelPosition="center" />
-
-              <Radio.Group
-                label="Tipe Pembayaran"
-                {...form.getInputProps("paymentType")}
-              >
-                <Stack gap="xs" mt="xs">
-                  <Radio value="full" label="Lunas (Full Payment)" />
-                  <Radio value="dp" label="DP (Down Payment)" />
-                </Stack>
-              </Radio.Group>
-
-              {form.values.paymentType === "dp" && (
-                <Paper p="md" withBorder bg="orange.0">
-                  <Text size="sm" fw={600} mb="xs">
-                    Pilih cepat jumlah DP:
-                  </Text>
-                  <Group gap="xs" mb="md">
-                    {DP_QUICK_OPTIONS.map((pct) => (
-                      <Button
-                        key={pct}
-                        size="xs"
-                        variant={
-                          form.values.downPaymentAmount ===
-                          Math.round(total * (pct / 100))
-                            ? "filled"
-                            : "outline"
-                        }
-                        onClick={() =>
-                          form.setFieldValue(
-                            "downPaymentAmount",
-                            Math.round(total * (pct / 100)),
-                          )
-                        }
-                      >
-                        {pct}% —{" "}
-                        {formatCurrency(Math.round(total * (pct / 100)))}
-                      </Button>
-                    ))}
-                  </Group>
-
-                  <NumberInput
-                    label="Jumlah DP"
-                    placeholder="Masukkan jumlah DP"
-                    leftSection="Rp"
-                    thousandSeparator="."
-                    decimalSeparator=","
-                    min={0}
-                    max={total - 1}
-                    size="lg"
-                    required
-                    {...form.getInputProps("downPaymentAmount")}
-                  />
-
-                  {form.values.downPaymentAmount > 0 && (
-                    <Stack gap="xs" mt="sm">
-                      <Group justify="space-between">
-                        <Text size="sm" c="dimmed">
-                          Sisa tagihan:
-                        </Text>
-                        <Text size="sm" fw={600} c="red">
-                          {formatCurrency(
-                            total - form.values.downPaymentAmount,
-                          )}
-                        </Text>
-                      </Group>
-                      <Group justify="space-between">
-                        <Text size="sm" c="dimmed">
-                          DP Minimum ({MIN_DP_PERCENT}%):
-                        </Text>
-                        <Text size="sm" fw={600}>
-                          {formatCurrency(
-                            Math.round(total * (MIN_DP_PERCENT / 100)),
-                          )}
-                        </Text>
-                      </Group>
-
-                      {form.values.downPaymentAmount <
-                        Math.round(total * (MIN_DP_PERCENT / 100)) && (
-                        <Paper p="xs" bg="red.0" style={{ borderRadius: 8 }}>
-                          <Group gap="xs">
-                            <IconAlertTriangle
-                              size={16}
-                              color="var(--mantine-color-red-6)"
-                            />
-                            <Text size="xs" c="red.7" fw={500}>
-                              DP di bawah {MIN_DP_PERCENT}% — produksi belum
-                              bisa dimulai sampai DP cukup
-                            </Text>
-                          </Group>
-                        </Paper>
-                      )}
-                    </Stack>
-                  )}
-                </Paper>
+                  DP di bawah {MIN_DP_PERCENT}% — produksi belum bisa dimulai
+                </Alert>
               )}
 
-              <Select
-                label="Metode Pembayaran"
-                data={[
-                  { value: "cash", label: "Tunai (Cash)" },
-                  { value: "transfer", label: "Transfer Bank" },
-                  { value: "qris", label: "QRIS" },
-                  { value: "e-wallet", label: "E-Wallet (OVO/GoPay/Dana)" },
-                ]}
+            <Select
+              label="Metode Pembayaran"
+              data={[
+                { value: "cash", label: "Tunai (Cash)" },
+                { value: "transfer", label: "Transfer Bank" },
+                { value: "qris", label: "QRIS" },
+                { value: "e-wallet", label: "E-Wallet (OVO/GoPay/Dana)" },
+              ]}
+              value={paymentMethod}
+              onChange={(v) => setPaymentMethod(v || "cash")}
+            />
+
+            <Textarea
+              label="Catatan"
+              placeholder="Catatan pembayaran (opsional)"
+              value={paymentNote}
+              onChange={(e) => setPaymentNote(e.currentTarget.value)}
+            />
+
+            <Group mt="md">
+              <Button variant="outline" onClick={closePayment} fullWidth>
+                Batal
+              </Button>
+              <Button
+                fullWidth
                 size="lg"
-                {...form.getInputProps("paymentMethod")}
-              />
-
-              <Textarea
-                label="Catatan"
-                placeholder="Catatan tambahan (opsional)"
-                rows={3}
-                {...form.getInputProps("notes")}
-              />
-
-              <Group mt="md">
-                <Button variant="outline" onClick={closeCheckout} fullWidth>
-                  Batal
-                </Button>
-                <Button type="submit" fullWidth size="lg">
-                  {form.values.paymentType === "full"
-                    ? `Bayar Lunas ${formatCurrency(total)}`
-                    : `Bayar DP ${formatCurrency(form.values.downPaymentAmount || 0)}`}
-                </Button>
-              </Group>
-            </Stack>
-          </form>
-        </Modal>
-      </Box>
-    </Box>
+                disabled={paymentAmount <= 0}
+                onClick={handlePayment}
+              >
+                Terima {formatCurrency(paymentAmount)}
+              </Button>
+            </Group>
+          </Stack>
+        )}
+      </Modal>
+    </Stack>
   );
 }

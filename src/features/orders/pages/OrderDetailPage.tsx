@@ -28,6 +28,9 @@ import {
   IconCheck,
   IconAlertTriangle,
   IconClock,
+  IconArrowRight,
+  IconHistory,
+  IconPrinter,
 } from "@tabler/icons-react";
 import { useOrderStore } from "../../../shared/stores/orderStore";
 import { useUserStore } from "../../../shared/stores/userStore";
@@ -35,8 +38,17 @@ import { useAuthStore } from "../../../shared/stores/authStore";
 import { useBusinessStore } from "../../../shared/stores/businessStore";
 import { formatCurrency, formatDateTime } from "../../../shared/utils";
 import { ROUTES } from "../../../core/routes";
-import { MIN_DP_PERCENT } from "../../../shared/constants";
-import type { Order, DpStatus, PaymentRecord } from "../../../shared/types";
+import {
+  MIN_DP_PERCENT,
+  ORDER_STATUS_LABELS,
+  ORDER_STATUS_COLORS,
+  STATUS_TRANSITIONS,
+} from "../../../shared/constants";
+import type {
+  DpStatus,
+  PaymentRecord,
+  OrderStatus,
+} from "../../../shared/types";
 
 export default function OrderDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -44,6 +56,9 @@ export default function OrderDetailPage() {
   const order = useOrderStore((state) => state.getOrderById(id!));
   const addPayment = useOrderStore((state) => state.addPayment);
   const isProductionReady = useOrderStore((state) => state.isProductionReady);
+  const updateOrderStatus = useOrderStore((state) => state.updateOrderStatus);
+  const canTransition = useOrderStore((state) => state.canTransition);
+  const getStatusLogs = useOrderStore((state) => state.getStatusLogs);
   const users = useUserStore((state) => state.users);
   const currentUser = useAuthStore((state) => state.user);
   const branches = useBusinessStore((state) => state.branches);
@@ -89,36 +104,14 @@ export default function OrderDetailPage() {
     order.total * ((order.minDpPercent || MIN_DP_PERCENT) / 100);
   const paymentProgress =
     order.total > 0 ? (order.paidAmount / order.total) * 100 : 0;
+  const statusLogs = getStatusLogs(order.id);
 
-  const getStatusColor = (status: Order["status"]) => {
-    switch (status) {
-      case "pending":
-        return "orange";
-      case "in-progress":
-        return "aqua";
-      case "completed":
-        return "green";
-      case "cancelled":
-        return "red";
-      default:
-        return "gray";
-    }
-  };
-
-  const getStatusLabel = (status: Order["status"]) => {
-    switch (status) {
-      case "pending":
-        return "Menunggu";
-      case "in-progress":
-        return "Dikerjakan";
-      case "completed":
-        return "Selesai";
-      case "cancelled":
-        return "Dibatalkan";
-      default:
-        return status;
-    }
-  };
+  // Get allowed next statuses for transition buttons
+  const allowedTransitions: OrderStatus[] = (
+    STATUS_TRANSITIONS[order.status] || []
+  ).filter((s: string) =>
+    canTransition(order.id, s as OrderStatus),
+  ) as OrderStatus[];
 
   const getDpStatusColor = (s: DpStatus) => {
     switch (s) {
@@ -171,16 +164,44 @@ export default function OrderDetailPage() {
     paymentForm.setFieldValue("amount", order.remainingPayment);
   };
 
+  const handleStatusTransition = (toStatus: OrderStatus) => {
+    if (!currentUser) return;
+    const success = updateOrderStatus(order.id, toStatus, currentUser.id);
+    if (success) {
+      notifications.show({
+        title: "Status Diperbarui",
+        message: `Order ${order.orderNumber} → ${ORDER_STATUS_LABELS[toStatus] || toStatus}`,
+        color: ORDER_STATUS_COLORS[toStatus] || "blue",
+      });
+    } else {
+      notifications.show({
+        title: "Gagal",
+        message: "Transisi status tidak diizinkan",
+        color: "red",
+      });
+    }
+  };
+
   return (
     <>
-      <Button
-        leftSection={<IconArrowLeft size={16} />}
-        variant="subtle"
-        onClick={() => navigate(ROUTES.ORDERS)}
-        mb="xl"
-      >
-        Kembali
-      </Button>
+      <Group mb="xl">
+        <Button
+          leftSection={<IconArrowLeft size={16} />}
+          variant="subtle"
+          onClick={() => navigate(ROUTES.ORDERS)}
+        >
+          Kembali
+        </Button>
+        <Button
+          leftSection={<IconPrinter size={16} />}
+          variant="light"
+          onClick={() =>
+            navigate(ROUTES.ORDER_INVOICE.replace(":id", order.id))
+          }
+        >
+          Cetak Nota
+        </Button>
+      </Group>
 
       <Grid>
         {/* Left Column: Order Detail */}
@@ -195,8 +216,11 @@ export default function OrderDetailPage() {
                   </Text>
                 </div>
                 <Group gap="xs">
-                  <Badge size="lg" color={getStatusColor(order.status)}>
-                    {getStatusLabel(order.status)}
+                  <Badge
+                    size="lg"
+                    color={ORDER_STATUS_COLORS[order.status] || "gray"}
+                  >
+                    {ORDER_STATUS_LABELS[order.status] || order.status}
                   </Badge>
                   {order.paymentType === "dp" && (
                     <Badge
@@ -235,21 +259,45 @@ export default function OrderDetailPage() {
                       justify="space-between"
                       p="md"
                       style={{ background: "#FAF5EE", borderRadius: 8 }}
+                      align="flex-start"
                     >
                       <div style={{ flex: 1 }}>
                         <Text fw={500}>{item.name}</Text>
                         <Text size="sm" c="dimmed">
                           {formatCurrency(item.price)} x {item.quantity}
                         </Text>
+                        {item.width && item.height && (
+                          <Text size="xs" c="dimmed">
+                            Ukuran: {item.width}×{item.height}m ={" "}
+                            {item.area?.toFixed(2)}m²
+                          </Text>
+                        )}
+                        {item.material && (
+                          <Text size="xs" c="dimmed">
+                            Material: {item.material}
+                          </Text>
+                        )}
+                        {item.finishing && item.finishing.length > 0 && (
+                          <Text size="xs" c="dimmed">
+                            Finishing: {item.finishing.join(", ")}
+                          </Text>
+                        )}
+                        {item.originalPrice &&
+                          item.originalPrice !== item.price && (
+                            <Text size="xs" c="red" td="line-through">
+                              {formatCurrency(item.originalPrice)}
+                              {item.discountPercent
+                                ? ` (-${item.discountPercent}%)`
+                                : ""}
+                            </Text>
+                          )}
                         {item.notes && (
-                          <Text size="sm" c="dimmed" mt="xs">
+                          <Text size="sm" c="dimmed" mt="xs" fs="italic">
                             Catatan: {item.notes}
                           </Text>
                         )}
                       </div>
-                      <Text fw={700}>
-                        {formatCurrency(item.price * item.quantity)}
-                      </Text>
+                      <Text fw={700}>{formatCurrency(item.subtotal)}</Text>
                     </Group>
                   ))}
                 </Stack>
@@ -284,7 +332,7 @@ export default function OrderDetailPage() {
                   <Text>{formatCurrency(order.subtotal)}</Text>
                 </Group>
                 <Group justify="space-between">
-                  <Text>Pajak (11%):</Text>
+                  <Text>PPN:</Text>
                   <Text>{formatCurrency(order.tax)}</Text>
                 </Group>
                 <Divider />
@@ -422,9 +470,12 @@ export default function OrderDetailPage() {
                   </Group>
                 )}
 
-                {/* Pelunasan Button */}
+                {/* Pelunasan Button - only for kasir/owner */}
                 {order.remainingPayment > 0 &&
-                  order.paymentStatus !== "paid" && (
+                  order.paymentStatus !== "paid" &&
+                  currentUser &&
+                  (currentUser.role === "kasir" ||
+                    currentUser.role === "owner") && (
                     <Button
                       fullWidth
                       mt="sm"
@@ -541,6 +592,106 @@ export default function OrderDetailPage() {
                 )}
               </Stack>
             </Card>
+
+            {/* Status Transition Controls */}
+            {allowedTransitions.length > 0 && (
+              <Card shadow="sm" padding="lg" radius="md" withBorder>
+                <Text size="sm" fw={500} c="dimmed" mb="md">
+                  UBAH STATUS
+                </Text>
+                <Stack gap="xs">
+                  {allowedTransitions.map((toStatus) => {
+                    const isSettledBlocked =
+                      toStatus === "settled" && order.remainingPayment > 0;
+                    return (
+                      <Button
+                        key={toStatus}
+                        variant={toStatus === "cancelled" ? "outline" : "light"}
+                        color={ORDER_STATUS_COLORS[toStatus] || "gray"}
+                        size="sm"
+                        leftSection={
+                          toStatus === "cancelled" ? (
+                            <IconAlertTriangle size={16} />
+                          ) : (
+                            <IconArrowRight size={16} />
+                          )
+                        }
+                        onClick={() => handleStatusTransition(toStatus)}
+                        fullWidth
+                        disabled={isSettledBlocked}
+                        title={
+                          isSettledBlocked
+                            ? "Tidak bisa settle — masih ada sisa tagihan"
+                            : undefined
+                        }
+                      >
+                        → {ORDER_STATUS_LABELS[toStatus] || toStatus}
+                        {isSettledBlocked ? " (sisa tagihan)" : ""}
+                      </Button>
+                    );
+                  })}
+                </Stack>
+              </Card>
+            )}
+
+            {/* Status Log Timeline */}
+            {statusLogs.length > 0 && (
+              <Card shadow="sm" padding="lg" radius="md" withBorder>
+                <Text size="sm" fw={500} c="dimmed" mb="md">
+                  <Group gap="xs">
+                    <IconHistory size={16} />
+                    LOG STATUS ({statusLogs.length})
+                  </Group>
+                </Text>
+                <Timeline
+                  active={statusLogs.length - 1}
+                  bulletSize={24}
+                  lineWidth={2}
+                >
+                  {statusLogs.map((log, idx) => {
+                    const changedByUser = users.find(
+                      (u) => u.id === log.changedBy,
+                    );
+                    return (
+                      <Timeline.Item
+                        key={log.id || idx}
+                        bullet={
+                          <ThemeIcon
+                            size={24}
+                            radius="xl"
+                            color={ORDER_STATUS_COLORS[log.toStatus] || "gray"}
+                          >
+                            <IconCheck size={12} />
+                          </ThemeIcon>
+                        }
+                        title={
+                          <Text size="sm" fw={600}>
+                            {log.fromStatus
+                              ? `${ORDER_STATUS_LABELS[log.fromStatus] || log.fromStatus} → ${ORDER_STATUS_LABELS[log.toStatus] || log.toStatus}`
+                              : ORDER_STATUS_LABELS[log.toStatus] ||
+                                log.toStatus}
+                          </Text>
+                        }
+                      >
+                        {changedByUser && (
+                          <Text size="xs" c="dimmed">
+                            oleh {changedByUser.name}
+                          </Text>
+                        )}
+                        {log.note && (
+                          <Text size="xs" c="dimmed" fs="italic">
+                            {log.note}
+                          </Text>
+                        )}
+                        <Text size="xs" c="dimmed" mt={2}>
+                          {formatDateTime(log.createdAt)}
+                        </Text>
+                      </Timeline.Item>
+                    );
+                  })}
+                </Timeline>
+              </Card>
+            )}
           </Stack>
         </Grid.Col>
       </Grid>

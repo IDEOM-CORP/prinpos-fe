@@ -1,8 +1,22 @@
 // Shared TypeScript types and interfaces
 
-export type UserRole = "owner" | "kasir" | "produksi" | "superadmin";
+export type UserRole =
+  | "owner"
+  | "kasir"
+  | "produksi"
+  | "designer"
+  | "superadmin";
 
-export type OrderStatus = "pending" | "in-progress" | "completed" | "cancelled";
+export type OrderStatus =
+  | "draft"
+  | "awaiting_payment"
+  | "pending_dp"
+  | "ready_production"
+  | "in_progress"
+  | "completed"
+  | "settled"
+  | "cancelled"
+  | "expired";
 
 export type BranchType = "outlet" | "produksi";
 
@@ -11,6 +25,16 @@ export type PaymentType = "full" | "dp" | "installment";
 export type PaymentStatus = "unpaid" | "partial" | "paid";
 
 export type DpStatus = "none" | "insufficient" | "sufficient" | "paid";
+
+export interface StatusLog {
+  id: string;
+  orderId: string;
+  fromStatus: OrderStatus | null; // null = initial creation
+  toStatus: OrderStatus;
+  changedBy: string; // userId
+  note?: string;
+  createdAt: string;
+}
 
 export interface PaymentRecord {
   id: string;
@@ -58,6 +82,10 @@ export interface Business {
   phone: string;
   email: string;
   createdAt: string;
+
+  // Business settings
+  taxEnabled?: boolean; // PPN enabled (default false)
+  taxRate?: number; // Tax rate decimal (e.g. 0.11 = 11%)
 }
 
 export interface Branch {
@@ -152,7 +180,9 @@ export interface OrderItem {
 
   // Pricing
   pricePerSqm?: number; // Price per m² (for area-based)
-  price: number; // Final unit price
+  originalPrice: number; // Original catalog price before discount
+  price: number; // Final unit price (after discount)
+  discountPercent?: number; // Manual discount % applied (0-100)
   quantity: number; // How many pieces/units
   subtotal: number; // price × quantity (or area × pricePerSqm × quantity)
 
@@ -186,6 +216,7 @@ export interface Order {
   deliveryDate?: string; // Actual delivery date
 
   status: OrderStatus;
+  statusLogs: StatusLog[]; // Log of all status changes
   branchId: string;
   businessId: string;
   createdBy: string;
@@ -194,6 +225,13 @@ export interface Order {
   createdAt: string;
   updatedAt: string;
   completedAt?: string;
+  settledAt?: string; // When order was fully paid & settled
+  settledBy?: string; // User who confirmed settlement
+
+  // Soft delete
+  isDeleted: boolean;
+  deletedAt?: string;
+  deletedBy?: string;
 }
 
 export interface CartItem {

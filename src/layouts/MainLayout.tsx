@@ -15,7 +15,6 @@ import { useDisclosure } from "@mantine/hooks";
 import { useNavigate, useLocation } from "react-router-dom";
 import {
   IconDashboard,
-  IconShoppingCart,
   IconTool,
   IconFileText,
   IconBox,
@@ -26,6 +25,10 @@ import {
   IconLayoutSidebarLeftCollapse,
   IconCategory,
   IconUsers,
+  IconFilePlus,
+  IconCash,
+  IconPaint,
+  IconStack3,
 } from "@tabler/icons-react";
 import { useAuthStore } from "../shared/stores/authStore";
 import { ROUTES } from "../core/routes";
@@ -52,52 +55,68 @@ export default function MainLayout({ children }: MainLayoutProps) {
       label: "Dashboard",
       icon: IconDashboard,
       path: ROUTES.DASHBOARD,
-      roles: ["owner"], // Only owner sees dashboard
+      roles: ["owner"],
     },
     {
-      label: "Kasir",
-      icon: IconShoppingCart,
+      label: "Buat Order",
+      icon: IconFilePlus,
+      path: ROUTES.CREATE_ORDER,
+      roles: ["designer", "owner"],
+    },
+    {
+      label: "Pembayaran",
+      icon: IconCash,
       path: ROUTES.CASHIER,
-      roles: ["kasir"], // Only kasir
+      roles: ["kasir"],
     },
     {
       label: "Produksi",
       icon: IconTool,
       path: ROUTES.PRODUCTION,
-      roles: ["produksi"], // Only produksi
+      roles: ["produksi"],
     },
     {
       label: "Orders",
       icon: IconFileText,
       path: ROUTES.ORDERS,
-      roles: ["owner", "kasir", "produksi"], // All roles can see orders
+      roles: ["owner", "kasir", "produksi", "designer"],
     },
     {
       label: "Barang",
       icon: IconBox,
       path: ROUTES.ITEMS,
-      roles: ["owner"], // Only owner manages items
+      roles: ["owner"],
+    },
+    {
+      label: "Finishing",
+      icon: IconPaint,
+      path: ROUTES.FINISHING,
+      roles: ["owner"],
+    },
+    {
+      label: "Material",
+      icon: IconStack3,
+      path: ROUTES.MATERIAL,
+      roles: ["owner"],
     },
     {
       label: "Kategori",
       icon: IconCategory,
       path: ROUTES.CATEGORIES,
-      roles: ["owner"], // Only owner manages categories
+      roles: ["owner"],
     },
     {
       label: "Pelanggan",
       icon: IconUsers,
       path: ROUTES.CUSTOMERS,
-      roles: ["owner", "kasir"], // Owner and kasir can manage customers
+      roles: ["owner", "kasir"],
     },
     {
       label: "Laporan",
       icon: IconChartBar,
       path: ROUTES.REPORTS,
-      roles: ["owner"], // Only owner sees reports
+      roles: ["owner"],
     },
-    // Users, Organizations, and Branches moved to internal superadmin web
-    // These routes still exist for backwards compatibility but not shown in sidebar
   ];
 
   const filteredNavItems = navItems.filter(

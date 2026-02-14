@@ -1,8 +1,18 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import type { Order, PaymentRecord, DpStatus } from "../types";
+import type {
+  Order,
+  PaymentRecord,
+  DpStatus,
+  StatusLog,
+  OrderStatus,
+} from "../types";
 import { generateId, generateOrderNumber } from "../utils";
-import { MIN_DP_PERCENT } from "../constants";
+import {
+  MIN_DP_PERCENT,
+  STATUS_TRANSITIONS,
+  EXPIRED_THRESHOLD_HOURS,
+} from "../constants";
 
 // Helper to compute dpStatus from payment state
 function computeDpStatus(order: {
@@ -21,18 +31,54 @@ function computeDpStatus(order: {
   return "none";
 }
 
+// Helper to create a status log entry
+function createStatusLog(
+  orderId: string,
+  fromStatus: OrderStatus | null,
+  toStatus: OrderStatus,
+  changedBy: string,
+  note?: string,
+): StatusLog {
+  return {
+    id: generateId(),
+    orderId,
+    fromStatus,
+    toStatus,
+    changedBy,
+    note,
+    createdAt: new Date().toISOString(),
+  };
+}
+
 interface OrderStore {
   orders: Order[];
   addOrder: (
-    order: Omit<Order, "id" | "orderNumber" | "createdAt" | "updatedAt">,
+    order: Omit<
+      Order,
+      | "id"
+      | "orderNumber"
+      | "createdAt"
+      | "updatedAt"
+      | "statusLogs"
+      | "isDeleted"
+      | "deletedAt"
+      | "deletedBy"
+    >,
   ) => Order;
   updateOrder: (id: string, updates: Partial<Order>) => void;
-  deleteOrder: (id: string) => void;
+  softDeleteOrder: (id: string, deletedBy: string) => void;
   getOrderById: (id: string) => Order | undefined;
+  getActiveOrders: () => Order[];
   getOrdersByBranch: (branchId: string) => Order[];
-  getOrdersByStatus: (status: Order["status"]) => Order[];
+  getOrdersByStatus: (status: OrderStatus) => Order[];
   assignOrderToUser: (orderId: string, userId: string) => void;
-  updateOrderStatus: (orderId: string, status: Order["status"]) => void;
+  updateOrderStatus: (
+    orderId: string,
+    newStatus: OrderStatus,
+    changedBy: string,
+    note?: string,
+  ) => boolean;
+  canTransition: (orderId: string, toStatus: OrderStatus) => boolean;
   addPayment: (
     orderId: string,
     amount: number,
@@ -43,8 +89,10 @@ interface OrderStore {
   getOutstandingOrders: () => Order[];
   getTotalOutstanding: () => number;
   getPaymentHistory: (orderId: string) => PaymentRecord[];
+  getStatusLogs: (orderId: string) => StatusLog[];
   isProductionReady: (orderId: string) => boolean;
   getDpStatus: (orderId: string) => DpStatus;
+  checkExpiredOrders: () => void;
 }
 
 export const useOrderStore = create<OrderStore>()(
@@ -53,10 +101,21 @@ export const useOrderStore = create<OrderStore>()(
       orders: [],
 
       addOrder: (orderData) => {
+        const orderId = generateId();
+        const initialLog = createStatusLog(
+          orderId,
+          null,
+          orderData.status,
+          orderData.createdBy,
+          "Order dibuat",
+        );
+
         const newOrder: Order = {
           ...orderData,
-          id: generateId(),
+          id: orderId,
           orderNumber: generateOrderNumber(),
+          statusLogs: [initialLog],
+          isDeleted: false,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         };
@@ -75,34 +134,90 @@ export const useOrderStore = create<OrderStore>()(
         }));
       },
 
-      deleteOrder: (id) => {
-        set((state) => ({
-          orders: state.orders.filter((order) => order.id !== id),
-        }));
+      softDeleteOrder: (id, deletedBy) => {
+        get().updateOrder(id, {
+          isDeleted: true,
+          deletedAt: new Date().toISOString(),
+          deletedBy,
+          status: "cancelled",
+        });
       },
 
       getOrderById: (id) => {
         return get().orders.find((order) => order.id === id);
       },
 
+      getActiveOrders: () => {
+        return get().orders.filter((order) => !order.isDeleted);
+      },
+
       getOrdersByBranch: (branchId) => {
-        return get().orders.filter((order) => order.branchId === branchId);
+        return get().orders.filter(
+          (order) => order.branchId === branchId && !order.isDeleted,
+        );
       },
 
       getOrdersByStatus: (status) => {
-        return get().orders.filter((order) => order.status === status);
+        return get().orders.filter(
+          (order) => order.status === status && !order.isDeleted,
+        );
       },
 
       assignOrderToUser: (orderId, userId) => {
         get().updateOrder(orderId, { assignedTo: userId });
       },
 
-      updateOrderStatus: (orderId, status) => {
-        const updates: Partial<Order> = { status };
-        if (status === "completed") {
+      canTransition: (orderId, toStatus) => {
+        const order = get().getOrderById(orderId);
+        if (!order) return false;
+        const allowed = STATUS_TRANSITIONS[order.status] || [];
+        return allowed.includes(toStatus);
+      },
+
+      updateOrderStatus: (orderId, newStatus, changedBy, note) => {
+        const order = get().getOrderById(orderId);
+        if (!order) return false;
+
+        // Validate transition
+        const allowed = STATUS_TRANSITIONS[order.status] || [];
+        if (!allowed.includes(newStatus)) {
+          console.warn(
+            `Invalid status transition: ${order.status} → ${newStatus}`,
+          );
+          return false;
+        }
+
+        // Guard: settled requires full payment
+        if (newStatus === "settled" && order.remainingPayment > 0) {
+          console.warn(
+            `Cannot settle order ${orderId}: remaining payment ${order.remainingPayment}`,
+          );
+          return false;
+        }
+
+        const log = createStatusLog(
+          orderId,
+          order.status,
+          newStatus,
+          changedBy,
+          note,
+        );
+        const updates: Partial<Order> = {
+          status: newStatus,
+          statusLogs: [...(order.statusLogs || []), log],
+        };
+
+        if (newStatus === "completed") {
           updates.completedAt = new Date().toISOString();
         }
+
+        if (newStatus === "settled") {
+          updates.settledAt = new Date().toISOString();
+          updates.settledBy = changedBy;
+        }
+
         get().updateOrder(orderId, updates);
+        return true;
       },
 
       addPayment: (orderId, amount, method, paidBy, note) => {
@@ -121,7 +236,6 @@ export const useOrderStore = create<OrderStore>()(
           newPaymentStatus = "unpaid";
         }
 
-        // Create payment record
         const paymentRecord: PaymentRecord = {
           id: generateId(),
           orderId,
@@ -136,7 +250,6 @@ export const useOrderStore = create<OrderStore>()(
         const updatedPaidAmount = newPaidAmount;
         const updatedRemaining = Math.max(0, newRemainingPayment);
 
-        // Recompute dpStatus
         const newDpStatus = computeDpStatus({
           paymentType: order.paymentType,
           total: order.total,
@@ -144,22 +257,84 @@ export const useOrderStore = create<OrderStore>()(
           minDpPercent: order.minDpPercent || MIN_DP_PERCENT,
         });
 
-        get().updateOrder(orderId, {
+        const updates: Partial<Order> = {
           paidAmount: updatedPaidAmount,
           remainingPayment: updatedRemaining,
           paymentStatus: newPaymentStatus,
           dpStatus: newDpStatus,
           paymentMethod: method || order.paymentMethod,
           payments: updatedPayments,
-        });
+        };
+
+        // Auto-transition status based on payment
+        let autoNote: string | undefined;
+        if (newPaymentStatus === "paid" && order.status === "completed") {
+          // Fully paid after completion → settled
+          updates.status = "settled";
+          updates.settledAt = new Date().toISOString();
+          updates.settledBy = paidBy;
+          autoNote = "Pelunasan otomatis → Lunas";
+        } else if (
+          order.status === "awaiting_payment" &&
+          newPaymentStatus === "paid"
+        ) {
+          // Full payment from awaiting_payment → settled
+          updates.status = "settled";
+          updates.settledAt = new Date().toISOString();
+          updates.settledBy = paidBy;
+          autoNote = "Pembayaran lunas → Lunas";
+        } else if (
+          order.status === "awaiting_payment" &&
+          (newDpStatus === "sufficient" || newDpStatus === "paid")
+        ) {
+          // DP sufficient from awaiting_payment → ready for production
+          updates.status = "ready_production";
+          autoNote = "DP cukup → Siap Produksi";
+        } else if (
+          order.status === "awaiting_payment" &&
+          newDpStatus === "insufficient"
+        ) {
+          // DP insufficient from awaiting_payment → pending DP
+          updates.status = "pending_dp";
+          autoNote = "DP belum cukup → Menunggu DP";
+        } else if (
+          order.status === "pending_dp" &&
+          (newDpStatus === "sufficient" || newDpStatus === "paid")
+        ) {
+          // DP sufficient → ready for production
+          updates.status = "ready_production";
+          autoNote = "DP cukup → Siap Produksi";
+        } else if (
+          order.status === "expired" &&
+          (newDpStatus === "sufficient" || newDpStatus === "paid")
+        ) {
+          // Expired revived by paying DP
+          updates.status = "ready_production";
+          autoNote = "DP dibayar → Siap Produksi (revived)";
+        }
+
+        if (autoNote && updates.status) {
+          const log = createStatusLog(
+            orderId,
+            order.status,
+            updates.status,
+            paidBy,
+            autoNote,
+          );
+          updates.statusLogs = [...(order.statusLogs || []), log];
+        }
+
+        get().updateOrder(orderId, updates);
       },
 
       getOutstandingOrders: () => {
-        return get().orders.filter(
-          (order) =>
-            order.paymentStatus === "partial" ||
-            order.paymentStatus === "unpaid",
-        );
+        return get()
+          .getActiveOrders()
+          .filter(
+            (order) =>
+              order.paymentStatus === "partial" ||
+              order.paymentStatus === "unpaid",
+          );
       },
 
       getTotalOutstanding: () => {
@@ -173,13 +348,16 @@ export const useOrderStore = create<OrderStore>()(
         return order?.payments || [];
       },
 
+      getStatusLogs: (orderId) => {
+        const order = get().getOrderById(orderId);
+        return order?.statusLogs || [];
+      },
+
       isProductionReady: (orderId) => {
         const order = get().getOrderById(orderId);
         if (!order) return false;
-        // Full payment orders are always production-ready
         if (order.paymentType === "full" && order.paymentStatus === "paid")
           return true;
-        // DP orders: check if DP meets minimum threshold
         const dpStatus =
           order.dpStatus ||
           computeDpStatus({
@@ -203,6 +381,31 @@ export const useOrderStore = create<OrderStore>()(
             minDpPercent: order.minDpPercent || MIN_DP_PERCENT,
           })
         );
+      },
+
+      checkExpiredOrders: () => {
+        const now = new Date();
+        const orders = get().getActiveOrders();
+        orders.forEach((order) => {
+          if (order.status === "pending_dp") {
+            const created = new Date(order.createdAt);
+            const diffHours =
+              (now.getTime() - created.getTime()) / (1000 * 60 * 60);
+            if (diffHours >= EXPIRED_THRESHOLD_HOURS) {
+              const log = createStatusLog(
+                order.id,
+                "pending_dp",
+                "expired",
+                "system",
+                `Auto-expired: ${EXPIRED_THRESHOLD_HOURS} jam tanpa DP cukup`,
+              );
+              get().updateOrder(order.id, {
+                status: "expired",
+                statusLogs: [...(order.statusLogs || []), log],
+              });
+            }
+          }
+        });
       },
     }),
     {
