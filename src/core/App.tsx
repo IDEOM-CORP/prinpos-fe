@@ -12,8 +12,7 @@ import CashierPage from "../features/cashier/pages/CashierPage";
 import ProductionPage from "../features/production/pages/ProductionPage";
 import OrdersPage from "../features/orders/pages/OrdersPage";
 import OrderDetailPage from "../features/orders/pages/OrderDetailPage";
-import CreateOrderPage from "../features/orders/pages/CreateOrderPage";
-import InvoicePage from "../features/orders/pages/InvoicePage";
+
 import ItemsPage from "../features/items/pages/ItemsPage";
 import FinishingListPage from "../features/finishing/pages/FinishingListPage";
 import FinishingFormPage from "../features/finishing/pages/FinishingFormPage";
@@ -34,6 +33,8 @@ import SuperAdminDashboardPage from "../features/superadmin/pages/SuperAdminDash
 import { useCategoryStore } from "../shared/stores/categoryStore";
 import { useCustomerStore } from "../shared/stores/customerStore";
 import { useOrderStore } from "../shared/stores/orderStore";
+import CreateOrderPage from "../features/orders/pages/CreateOrderPage";
+import InvoicePage from "../features/orders/pages/InvoicePage";
 
 function App() {
   const initializeItems = useItemStore((state) => state.initializeItems);
