@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import {
   Grid,
   Card,
@@ -9,19 +9,25 @@ import {
   Title,
   Table,
   Select,
+  Progress,
+  Badge,
 } from "@mantine/core";
+import { DatePickerInput } from "@mantine/dates";
 import {
   IconFileText,
   IconCurrencyDollar,
-  IconShoppingCart,
-  IconCheck,
   IconTrendingUp,
+  IconBuildingStore,
+  IconCalendar,
+  IconCreditCard,
 } from "@tabler/icons-react";
 import { useOrderStore } from "../../../shared/stores/orderStore";
-import { useItemStore } from "../../../shared/stores/itemStore";
 import { useBusinessStore } from "../../../shared/stores/businessStore";
-import { formatCurrency, formatDate } from "../../../shared/utils";
-import { IconBuildingStore } from "@tabler/icons-react";
+import { formatCurrency } from "../../../shared/utils";
+import dayjs from "dayjs";
+import isBetween from "dayjs/plugin/isBetween";
+
+dayjs.extend(isBetween);
 
 interface StatCardProps {
   title: string;
@@ -29,6 +35,7 @@ interface StatCardProps {
   icon: React.ReactNode;
   color: string;
   subtitle?: string;
+  comparison?: string;
 }
 
 function StatCard({ title, value, icon, color, subtitle }: StatCardProps) {
@@ -56,192 +63,284 @@ function StatCard({ title, value, icon, color, subtitle }: StatCardProps) {
   );
 }
 
+type PeriodType = "today" | "this_week" | "this_month" | "this_year" | "custom";
+
 export default function ReportsPage() {
   const allOrders = useOrderStore((state) => state.orders);
-  const items = useItemStore((state) => state.items);
   const branches = useBusinessStore((state) => state.branches);
-  const [selectedBranchId, setSelectedBranchId] = useState("");
 
-  // Branch options for filter
+  // Filters
+  const [selectedBranchId, setSelectedBranchId] = useState("");
+  const [periodType, setPeriodType] = useState<PeriodType>("this_month");
+  const [dateRange, setDateRange] = useState<[Date | null, Date | null]>([
+    dayjs().startOf("month").toDate(),
+    dayjs().endOf("month").toDate(),
+  ]);
+
+  // Branch options
   const branchOptions = [
     { value: "", label: "Semua Cabang" },
     ...branches.map((b) => ({ value: b.id, label: b.name })),
   ];
 
-  // Filter by branch
-  const orders = selectedBranchId
-    ? allOrders.filter((o) => o.branchId === selectedBranchId)
-    : allOrders;
+  // Handle period change
+  const handlePeriodChange = (value: string) => {
+    setPeriodType(value as PeriodType);
+    const now = dayjs();
+    switch (value) {
+      case "today":
+        setDateRange([now.startOf("day").toDate(), now.endOf("day").toDate()]);
+        break;
+      case "this_week":
+        setDateRange([
+          now.startOf("week").add(1, "day").toDate(),
+          now.endOf("week").add(1, "day").toDate(),
+        ]);
+        break;
+      case "this_month":
+        setDateRange([
+          now.startOf("month").toDate(),
+          now.endOf("month").toDate(),
+        ]);
+        break;
+      case "this_year":
+        setDateRange([
+          now.startOf("year").toDate(),
+          now.endOf("year").toDate(),
+        ]);
+        break;
+      case "custom":
+        setDateRange([null, null]);
+        break;
+    }
+  };
 
-  // Total orders
-  const totalOrders = orders.length;
-  const pendingOrders = orders.filter(
-    (o) => o.status === "pending_dp" || o.status === "ready_production",
-  ).length;
-  const inProgressOrders = orders.filter(
-    (o) => o.status === "in_progress",
-  ).length;
-  const completedOrders = orders.filter(
-    (o) => o.status === "completed" || o.status === "settled",
-  ).length;
-
-  // Revenue
-  const totalRevenue = orders
-    .filter((o) => o.status === "completed" || o.status === "settled")
-    .reduce((sum, o) => sum + o.total, 0);
-
-  const pendingRevenue = orders
-    .filter((o) => o.status === "pending_dp" || o.status === "ready_production")
-    .reduce((sum, o) => sum + o.total, 0);
-
-  // Average order value
-  const avgOrderValue =
-    completedOrders > 0 ? totalRevenue / completedOrders : 0;
-
-  // Top selling items
-  const itemSales: {
-    [key: string]: { name: string; quantity: number; revenue: number };
-  } = {};
-
-  orders
-    .filter((o) => o.status === "completed" || o.status === "settled")
-    .forEach((order) => {
-      order.items.forEach((item) => {
-        if (!itemSales[item.itemId]) {
-          itemSales[item.itemId] = {
-            name: item.name,
-            quantity: 0,
-            revenue: 0,
-          };
-        }
-        itemSales[item.itemId].quantity += item.quantity;
-        itemSales[item.itemId].revenue += item.price * item.quantity;
-      });
+  // Filtered orders
+  const filteredOrders = useMemo(() => {
+    return allOrders.filter((o) => {
+      const matchBranch = selectedBranchId
+        ? o.branchId === selectedBranchId
+        : true;
+      let matchDate = true;
+      if (dateRange[0] && dateRange[1]) {
+        matchDate = dayjs(o.createdAt).isBetween(
+          dateRange[0],
+          dateRange[1],
+          "day",
+          "[]",
+        );
+      }
+      return matchBranch && matchDate;
     });
+  }, [allOrders, selectedBranchId, dateRange]);
 
-  const topItems = Object.entries(itemSales)
-    .map(([id, data]) => ({ id, ...data }))
-    .sort((a, b) => b.revenue - a.revenue)
-    .slice(0, 10);
+  // Metrics Calculation
+  const metrics = useMemo(() => {
+    const completed = filteredOrders.filter(
+      (o) => o.status === "completed" || o.status === "settled",
+    );
+    const revenue = completed.reduce((sum, o) => sum + o.total, 0);
+    const totalOrders = filteredOrders.length;
+    const completedCount = completed.length;
+    const aov = completedCount > 0 ? revenue / completedCount : 0;
 
-  // Recent orders
-  const recentOrders = [...orders]
-    .sort(
-      (a, b) =>
-        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-    )
-    .slice(0, 10);
+    // Outstanding Receivable (Piutang)
+    // Orders that are NOT cancelled/expired, and have remaining payment > 0
+    const receivable = filteredOrders
+      .filter(
+        (o) =>
+          o.status !== "cancelled" &&
+          o.status !== "expired" &&
+          o.remainingPayment > 0,
+      )
+      .reduce((sum, o) => sum + o.remainingPayment, 0);
+
+    return { revenue, totalOrders, completedCount, aov, receivable };
+  }, [filteredOrders]);
+
+  // Revenue per Branch
+  const revenueByBranch = useMemo(() => {
+    const data: Record<string, number> = {};
+    filteredOrders
+      .filter((o) => o.status === "completed" || o.status === "settled")
+      .forEach((o) => {
+        const branchName =
+          branches.find((b) => b.id === o.branchId)?.name || "Unknown";
+        data[branchName] = (data[branchName] || 0) + o.total;
+      });
+    return Object.entries(data)
+      .map(([name, total]) => ({ name, total }))
+      .sort((a, b) => b.total - a.total);
+  }, [filteredOrders, branches]);
+
+  // Product Performance & Revenue per Product
+  const productPerformance = useMemo(() => {
+    const data: Record<
+      string,
+      { name: string; qty: number; revenue: number; category: string }
+    > = {};
+
+    // Check all completed orders in the filtered range
+    filteredOrders
+      .filter((o) => o.status === "completed" || o.status === "settled")
+      .forEach((order) => {
+        order.items.forEach((item) => {
+          if (!data[item.itemId]) {
+            data[item.itemId] = {
+              name: item.name,
+              qty: 0,
+              revenue: 0,
+              category: item.category || "-",
+            };
+          }
+          data[item.itemId].qty += item.quantity;
+          data[item.itemId].revenue += item.subtotal; // Use subtotal for accurate revenue share
+        });
+      });
+
+    return Object.values(data)
+      .sort((a, b) => b.revenue - a.revenue)
+      .slice(0, 10); // Top 10
+  }, [filteredOrders]);
+
+  // Revenue per Period (Graph-like table)
+  const revenuePerPeriod = useMemo(() => {
+    const data: Record<string, number> = {};
+    const format = periodType === "this_year" ? "MMM YYYY" : "DD MMM";
+
+    filteredOrders
+      .filter((o) => o.status === "completed" || o.status === "settled")
+      .forEach((o) => {
+        const key = dayjs(o.createdAt).format(format);
+        data[key] = (data[key] || 0) + o.total;
+      });
+
+    // Fill missing dates if needed (skipped for simplicity, showing only active days)
+    return Object.entries(data).map(([date, total]) => ({ date, total }));
+  }, [filteredOrders, periodType]);
+
+  const maxRevenuePeriod = Math.max(...revenuePerPeriod.map((d) => d.total), 1);
 
   return (
     <>
-      <Group justify="space-between" mb="xl">
+      <Group justify="space-between" mb="lg">
         <Title order={2}>Laporan & Statistik</Title>
-        <Select
-          placeholder="Semua Cabang"
-          data={branchOptions}
-          value={selectedBranchId}
-          onChange={(value) => setSelectedBranchId(value || "")}
-          leftSection={<IconBuildingStore size={16} />}
-          size="sm"
-          style={{ width: 220 }}
-          clearable={false}
-          allowDeselect={false}
-        />
+        <Group>
+          <Select
+            placeholder="Pilih Periode"
+            data={[
+              { value: "today", label: "Hari Ini" },
+              { value: "this_week", label: "Minggu Ini" },
+              { value: "this_month", label: "Bulan Ini" },
+              { value: "this_year", label: "Tahun Ini" },
+              { value: "custom", label: "Custom Range" },
+            ]}
+            value={periodType}
+            onChange={(v) => handlePeriodChange(v || "this_month")}
+            allowDeselect={false}
+          />
+          {periodType === "custom" && (
+            <DatePickerInput
+              type="range"
+              placeholder="Pilih tanggal"
+              value={dateRange}
+              onChange={(value) =>
+                setDateRange(value as unknown as [Date | null, Date | null])
+              }
+              leftSection={<IconCalendar size={16} />}
+              clearable
+            />
+          )}
+          <Select
+            placeholder="Semua Cabang"
+            data={branchOptions}
+            value={selectedBranchId}
+            onChange={(value) => setSelectedBranchId(value || "")}
+            leftSection={<IconBuildingStore size={16} />}
+            clearable={false}
+          />
+        </Group>
       </Group>
 
+      {/* Summary Cards */}
       <Grid mb="xl">
-        <Grid.Col span={{ base: 12, sm: 6, md: 4 }}>
+        <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
           <StatCard
-            title="Total Orders"
-            value={totalOrders}
-            icon={<IconFileText size={30} />}
-            color="aqua"
-            subtitle={`${pendingOrders} pending, ${inProgressOrders} proses`}
-          />
-        </Grid.Col>
-
-        <Grid.Col span={{ base: 12, sm: 6, md: 4 }}>
-          <StatCard
-            title="Orders Selesai"
-            value={completedOrders}
-            icon={<IconCheck size={30} />}
-            color="green"
-          />
-        </Grid.Col>
-
-        <Grid.Col span={{ base: 12, sm: 6, md: 4 }}>
-          <StatCard
-            title="Total Omzet"
-            value={formatCurrency(totalRevenue)}
+            title="Total Revenue"
+            value={formatCurrency(metrics.revenue)}
             icon={<IconCurrencyDollar size={30} />}
             color="teal"
-            subtitle="Dari orders selesai"
+            subtitle={`${metrics.completedCount} transaksi sukses`}
           />
         </Grid.Col>
-
-        <Grid.Col span={{ base: 12, sm: 6, md: 4 }}>
+        <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
           <StatCard
-            title="Pending Revenue"
-            value={formatCurrency(pendingRevenue)}
-            icon={<IconShoppingCart size={30} />}
-            color="orange"
-            subtitle="Orders belum selesai"
-          />
-        </Grid.Col>
-
-        <Grid.Col span={{ base: 12, sm: 6, md: 4 }}>
-          <StatCard
-            title="Rata-rata Nilai Order"
-            value={formatCurrency(avgOrderValue)}
+            title="Avg. Order Value"
+            value={formatCurrency(metrics.aov)}
             icon={<IconTrendingUp size={30} />}
             color="violet"
+            subtitle="Rata-rata per transaksi"
           />
         </Grid.Col>
-
-        <Grid.Col span={{ base: 12, sm: 6, md: 4 }}>
+        <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
           <StatCard
-            title="Total Produk"
-            value={items.length}
+            title="Piutang (Receivable)"
+            value={formatCurrency(metrics.receivable)}
+            icon={<IconCreditCard size={30} />}
+            color="orange"
+            subtitle="Belum lunas (semua status)"
+          />
+        </Grid.Col>
+        <Grid.Col span={{ base: 12, sm: 6, md: 3 }}>
+          <StatCard
+            title="Total Transaksi"
+            value={metrics.totalOrders}
             icon={<IconFileText size={30} />}
-            color="pink"
+            color="blue"
+            subtitle="Semua status order"
           />
         </Grid.Col>
       </Grid>
 
       <Grid>
-        <Grid.Col span={{ base: 12, md: 6 }}>
-          <Card shadow="sm" padding="lg" radius="md" withBorder>
+        {/* Product Performance */}
+        <Grid.Col span={{ base: 12, md: 8 }}>
+          <Card shadow="sm" padding="lg" radius="md" withBorder h="100%">
             <Title order={3} mb="md">
-              Top 10 Produk Terlaris
+              Top 10 Produk Terlaris (Revenue)
             </Title>
-            {topItems.length === 0 ? (
+            {productPerformance.length === 0 ? (
               <Text c="dimmed" ta="center" py="xl">
-                Belum ada data penjualan
+                Tidak ada data penjualan
               </Text>
             ) : (
               <Table>
                 <Table.Thead>
                   <Table.Tr>
                     <Table.Th>Produk</Table.Th>
+                    <Table.Th>Kategori</Table.Th>
                     <Table.Th>Terjual</Table.Th>
                     <Table.Th>Revenue</Table.Th>
+                    <Table.Th>Kontribusi</Table.Th>
                   </Table.Tr>
                 </Table.Thead>
                 <Table.Tbody>
-                  {topItems.map((item) => (
-                    <Table.Tr key={item.id}>
+                  {productPerformance.map((p) => (
+                    <Table.Tr key={p.name}>
+                      <Table.Td fw={500}>{p.name}</Table.Td>
                       <Table.Td>
-                        <Text size="sm" fw={500}>
-                          {item.name}
-                        </Text>
+                        <Badge variant="light" color="gray">
+                          {p.category}
+                        </Badge>
                       </Table.Td>
-                      <Table.Td>
-                        <Text size="sm">{item.quantity}</Text>
-                      </Table.Td>
-                      <Table.Td>
-                        <Text size="sm" fw={500}>
-                          {formatCurrency(item.revenue)}
-                        </Text>
+                      <Table.Td>{p.qty}</Table.Td>
+                      <Table.Td>{formatCurrency(p.revenue)}</Table.Td>
+                      <Table.Td width={100}>
+                        <Progress
+                          value={(p.revenue / metrics.revenue) * 100}
+                          size="sm"
+                          color="teal"
+                        />
                       </Table.Td>
                     </Table.Tr>
                   ))}
@@ -251,67 +350,83 @@ export default function ReportsPage() {
           </Card>
         </Grid.Col>
 
-        <Grid.Col span={12}>
-          <Card shadow="sm" padding="lg" radius="md" withBorder>
-            <Title order={3} mb="md">
-              Orders Terbaru
-            </Title>
-            {recentOrders.length === 0 ? (
-              <Text c="dimmed" ta="center" py="xl">
-                Belum ada order
-              </Text>
-            ) : (
-              <Table>
-                <Table.Thead>
-                  <Table.Tr>
-                    <Table.Th>No. Order</Table.Th>
-                    <Table.Th>Pelanggan</Table.Th>
-                    <Table.Th>Tanggal</Table.Th>
-                    <Table.Th>Total</Table.Th>
-                    <Table.Th>Status</Table.Th>
-                  </Table.Tr>
-                </Table.Thead>
-                <Table.Tbody>
-                  {recentOrders.map((order) => (
-                    <Table.Tr key={order.id}>
-                      <Table.Td>
+        {/* Revenue Breakdown Side */}
+        <Grid.Col span={{ base: 12, md: 4 }}>
+          <Stack gap="md">
+            {/* Revenue per Branch */}
+            <Card shadow="sm" padding="lg" radius="md" withBorder>
+              <Title order={4} mb="md">
+                Omzet per Cabang
+              </Title>
+              {revenueByBranch.length === 0 ? (
+                <Text c="dimmed" size="sm">
+                  Tidak ada data
+                </Text>
+              ) : (
+                <Stack gap="sm">
+                  {revenueByBranch.map((b) => (
+                    <div key={b.name}>
+                      <Group justify="space-between" mb={4}>
+                        <Text size="sm">{b.name}</Text>
                         <Text size="sm" fw={500}>
-                          {order.orderNumber}
+                          {formatCurrency(b.total)}
                         </Text>
-                      </Table.Td>
-                      <Table.Td>
-                        <Text size="sm">{order.customerName}</Text>
-                      </Table.Td>
-                      <Table.Td>
-                        <Text size="sm">{formatDate(order.createdAt)}</Text>
-                      </Table.Td>
-                      <Table.Td>
-                        <Text size="sm" fw={500}>
-                          {formatCurrency(order.total)}
-                        </Text>
-                      </Table.Td>
-                      <Table.Td>
-                        <Text
-                          size="sm"
-                          c={
-                            order.status === "completed" ||
-                            order.status === "settled"
-                              ? "green"
-                              : order.status === "in_progress"
-                                ? "aqua"
-                                : "orange"
-                          }
-                          fw={500}
-                        >
-                          {order.status}
-                        </Text>
-                      </Table.Td>
-                    </Table.Tr>
+                      </Group>
+                      <Progress
+                        value={(b.total / metrics.revenue) * 100}
+                        color="indigo"
+                        size="sm"
+                      />
+                    </div>
                   ))}
-                </Table.Tbody>
-              </Table>
-            )}
-          </Card>
+                </Stack>
+              )}
+            </Card>
+
+            {/* Revenue Trend (Simple List) */}
+            <Card shadow="sm" padding="lg" radius="md" withBorder>
+              <Title order={4} mb="md">
+                Omzet per Periode
+              </Title>
+              {revenuePerPeriod.length === 0 ? (
+                <Text c="dimmed" size="sm">
+                  Tidak ada data
+                </Text>
+              ) : (
+                <Stack gap="xs" style={{ maxHeight: 300, overflowY: "auto" }}>
+                  {revenuePerPeriod.map((d) => (
+                    <Group key={d.date} justify="space-between">
+                      <Text size="sm" c="dimmed">
+                        {d.date}
+                      </Text>
+                      <Group gap="xs">
+                        <Text size="sm" fw={500}>
+                          {formatCurrency(d.total)}
+                        </Text>
+                        <div
+                          style={{
+                            width: 60,
+                            height: 6,
+                            backgroundColor: "#f1f3f5",
+                            borderRadius: 4,
+                            overflow: "hidden",
+                          }}
+                        >
+                          <div
+                            style={{
+                              width: `${(d.total / maxRevenuePeriod) * 100}%`,
+                              height: "100%",
+                              backgroundColor: "#20c997",
+                            }}
+                          />
+                        </div>
+                      </Group>
+                    </Group>
+                  ))}
+                </Stack>
+              )}
+            </Card>
+          </Stack>
         </Grid.Col>
       </Grid>
     </>
