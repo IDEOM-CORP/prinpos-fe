@@ -39,7 +39,6 @@ import {
   IconBarcode,
   IconClock,
   IconReceipt,
-  IconPercentage,
 } from "@tabler/icons-react";
 import { useItemStore } from "../../../shared/stores/itemStore";
 import { useAuthStore } from "../../../shared/stores/authStore";
@@ -56,7 +55,6 @@ interface FormValues {
   description: string;
   price: number;
   pricePerSqm: number;
-  costPrice: number;
   pricingModel: PricingModel;
   category: string;
   imageUrl: string;
@@ -110,7 +108,6 @@ export default function ItemsPage() {
       description: "",
       price: 0,
       pricePerSqm: 0,
-      costPrice: 0,
       pricingModel: "fixed",
       category: "",
       imageUrl: "",
@@ -164,25 +161,6 @@ export default function ItemsPage() {
     const suffix = String(Date.now()).slice(-4);
     form.setFieldValue("sku", `${prefix}-${suffix}`);
   };
-
-  // --- Margin calculation ---
-  const marginPercent = useMemo(() => {
-    const basePrice =
-      form.values.pricingModel === "area"
-        ? form.values.pricePerSqm
-        : form.values.pricingModel === "tiered" && form.values.tiers.length > 0
-          ? form.values.tiers[0].price
-          : form.values.price;
-    if (!basePrice || !form.values.costPrice || form.values.costPrice <= 0)
-      return null;
-    return Math.round(((basePrice - form.values.costPrice) / basePrice) * 100);
-  }, [
-    form.values.price,
-    form.values.pricePerSqm,
-    form.values.tiers,
-    form.values.costPrice,
-    form.values.pricingModel,
-  ]);
 
   // --- Real-time price simulator ---
   const priceSimulation = useMemo(() => {
@@ -259,7 +237,6 @@ export default function ItemsPage() {
           description: item.description,
           price: item.price,
           pricePerSqm: item.pricePerSqm || 0,
-          costPrice: item.costPrice || 0,
           pricingModel: item.pricingModel,
           category: item.category,
           imageUrl: item.imageUrl,
@@ -312,7 +289,6 @@ export default function ItemsPage() {
       imageUrl: values.imageUrl,
       pricingModel: values.pricingModel,
       price: basePrice,
-      costPrice: values.costPrice > 0 ? values.costPrice : undefined,
       pricePerSqm:
         values.pricingModel === "area" ? values.pricePerSqm : undefined,
       tiers: values.pricingModel === "tiered" ? values.tiers : undefined,
@@ -898,40 +874,6 @@ export default function ItemsPage() {
                       </Stack>
                     </Paper>
                   )}
-
-                  {/* --- Cost Price & Margin --- */}
-                  <Divider variant="dashed" />
-                  <Group grow align="flex-end">
-                    <NumberInput
-                      label="Harga Modal (HPP)"
-                      description="Untuk kalkulasi margin"
-                      placeholder="0"
-                      min={0}
-                      prefix="Rp "
-                      thousandSeparator=","
-                      {...form.getInputProps("costPrice")}
-                    />
-                    <div>
-                      {marginPercent !== null && (
-                        <Paper
-                          p="xs"
-                          radius="sm"
-                          bg={marginPercent > 0 ? "teal.0" : "red.0"}
-                        >
-                          <Group gap={4}>
-                            <IconPercentage size={14} />
-                            <Text
-                              size="sm"
-                              fw={600}
-                              c={marginPercent > 0 ? "teal.7" : "red.7"}
-                            >
-                              Margin: {marginPercent}%
-                            </Text>
-                          </Group>
-                        </Paper>
-                      )}
-                    </div>
-                  </Group>
                 </Stack>
               </Paper>
 
@@ -1101,12 +1043,6 @@ export default function ItemsPage() {
                         {formatCurrency(priceSimulation.total)}
                       </Text>
                     </Group>
-
-                    {marginPercent !== null && (
-                      <Text size="xs" c="dimmed" ta="right">
-                        Margin ~{marginPercent}%
-                      </Text>
-                    )}
                   </Stack>
                 </Paper>
               )}

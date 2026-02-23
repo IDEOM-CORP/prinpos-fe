@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   Card,
@@ -17,6 +18,7 @@ import {
   Progress,
   Timeline,
   ThemeIcon,
+  Box,
 } from "@mantine/core";
 import { useForm } from "@mantine/form";
 import { useDisclosure } from "@mantine/hooks";
@@ -75,12 +77,24 @@ export default function OrderDetailPage() {
     validate: {
       amount: (value) => {
         if (value <= 0) return "Jumlah harus lebih dari 0";
-        if (order && value > order.remainingPayment)
-          return "Jumlah melebihi sisa tagihan";
         return null;
       },
     },
   });
+
+  // Modal kembalian
+  const [
+    changeModalOpened,
+    { open: openChangeModal, close: closeChangeModal },
+  ] = useDisclosure(false);
+  const [lastPaymentInfo, setLastPaymentInfo] = useState<{
+    orderId: string;
+    orderNumber: string;
+    customerName: string;
+    paidAmount: number;
+    remaining: number;
+    method: string;
+  } | null>(null);
 
   if (!order) {
     return (
@@ -142,21 +156,34 @@ export default function OrderDetailPage() {
   };
 
   const handlePayment = (values: typeof paymentForm.values) => {
-    if (!currentUser) return;
+    if (!currentUser || !order) return;
+
+    const remaining = order.remainingPayment;
+    const actualPaid = Math.min(values.amount, remaining);
+
     addPayment(
       order.id,
-      values.amount,
+      actualPaid,
       values.method,
       currentUser.id,
       values.note || undefined,
     );
-    notifications.show({
-      title: "Pembayaran Berhasil",
-      message: `Pembayaran ${formatCurrency(values.amount)} telah dicatat`,
-      color: "green",
+
+    // Simpan info untuk modal kembalian
+    setLastPaymentInfo({
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      customerName: order.customerName,
+      paidAmount: values.amount,
+      remaining,
+      method: values.method,
     });
+
     paymentForm.reset();
     closePayment();
+
+    // Buka modal kembalian
+    openChangeModal();
   };
 
   const handlePayFull = () => {
@@ -721,11 +748,27 @@ export default function OrderDetailPage() {
               thousandSeparator="."
               decimalSeparator=","
               min={1}
-              max={order.remainingPayment}
               size="lg"
               required
               {...paymentForm.getInputProps("amount")}
             />
+
+            {/* Preview kembalian real-time (cash only) */}
+            {paymentForm.values.method === "cash" &&
+              paymentForm.values.amount > order.remainingPayment && (
+                <Paper p="sm" radius="sm" bg="teal.0">
+                  <Group justify="space-between">
+                    <Text size="sm" fw={600} c="teal.7">
+                      Kembalian
+                    </Text>
+                    <Text size="lg" fw={800} c="teal.7">
+                      {formatCurrency(
+                        paymentForm.values.amount - order.remainingPayment,
+                      )}
+                    </Text>
+                  </Group>
+                </Paper>
+              )}
 
             <Button
               variant="light"
@@ -769,6 +812,135 @@ export default function OrderDetailPage() {
             </Group>
           </Stack>
         </form>
+      </Modal>
+
+      {/* ===== MODAL KEMBALIAN ===== */}
+      <Modal
+        opened={changeModalOpened}
+        onClose={closeChangeModal}
+        title=""
+        size="sm"
+        centered
+        withCloseButton={false}
+        styles={{ body: { padding: 0 } }}
+      >
+        {lastPaymentInfo &&
+          (() => {
+            const {
+              orderId,
+              orderNumber,
+              customerName,
+              paidAmount,
+              remaining,
+              method,
+            } = lastPaymentInfo;
+            const actualPaid = Math.min(paidAmount, remaining);
+            const change =
+              method === "cash" ? Math.max(paidAmount - remaining, 0) : 0;
+            const isFullyPaid = paidAmount >= remaining;
+
+            return (
+              <Stack gap={0}>
+                {/* Header hijau */}
+                <Box
+                  p="xl"
+                  style={{
+                    background: "linear-gradient(135deg, #2f9e44, #40c057)",
+                    borderRadius:
+                      "var(--mantine-radius-md) var(--mantine-radius-md) 0 0",
+                    textAlign: "center",
+                  }}
+                >
+                  <ThemeIcon
+                    size={56}
+                    radius="xl"
+                    color="white"
+                    variant="white"
+                    mx="auto"
+                    mb="sm"
+                    style={{ color: "#2f9e44" }}
+                  >
+                    <IconCheck size={32} />
+                  </ThemeIcon>
+                  <Text c="white" fw={700} size="lg">
+                    Pembayaran Diterima!
+                  </Text>
+                  <Text c="rgba(255,255,255,0.85)" size="sm">
+                    {orderNumber} · {customerName}
+                  </Text>
+                </Box>
+
+                {/* Body */}
+                <Stack gap="sm" p="xl">
+                  <Paper p="md" withBorder radius="md" bg="gray.0">
+                    <Stack gap={8}>
+                      <Group justify="space-between">
+                        <Text size="sm" c="dimmed">
+                          Tagihan
+                        </Text>
+                        <Text size="sm" fw={500}>
+                          {formatCurrency(remaining)}
+                        </Text>
+                      </Group>
+                      <Group justify="space-between">
+                        <Text size="sm" c="dimmed">
+                          Dibayar
+                        </Text>
+                        <Text size="sm" fw={500} c="green">
+                          {formatCurrency(actualPaid)}
+                        </Text>
+                      </Group>
+                      {change > 0 && (
+                        <>
+                          <Divider />
+                          <Group justify="space-between">
+                            <Text fw={700} size="md">
+                              Kembalian
+                            </Text>
+                            <Text fw={800} size="xl" c="teal">
+                              {formatCurrency(change)}
+                            </Text>
+                          </Group>
+                        </>
+                      )}
+                      {!isFullyPaid && (
+                        <>
+                          <Divider />
+                          <Group justify="space-between">
+                            <Text size="sm" c="dimmed">
+                              Sisa Tagihan
+                            </Text>
+                            <Text size="sm" fw={600} c="orange">
+                              {formatCurrency(remaining - actualPaid)}
+                            </Text>
+                          </Group>
+                        </>
+                      )}
+                    </Stack>
+                  </Paper>
+
+                  <Group grow>
+                    <Button
+                      variant="light"
+                      leftSection={<IconPrinter size={16} />}
+                      onClick={() => {
+                        closeChangeModal();
+                        navigate(ROUTES.ORDER_INVOICE.replace(":id", orderId));
+                      }}
+                    >
+                      Cetak Resi
+                    </Button>
+                    <Button
+                      rightSection={<IconArrowRight size={16} />}
+                      onClick={closeChangeModal}
+                    >
+                      Selesai
+                    </Button>
+                  </Group>
+                </Stack>
+              </Stack>
+            );
+          })()}
       </Modal>
     </>
   );

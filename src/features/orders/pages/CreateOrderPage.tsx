@@ -21,9 +21,11 @@ import {
   Table,
   Alert,
   Box,
+  Modal,
 } from "@mantine/core";
 import { DateInput } from "@mantine/dates";
 import { useForm } from "@mantine/form";
+import { useDisclosure } from "@mantine/hooks";
 import { notifications } from "@mantine/notifications";
 import {
   IconSearch,
@@ -34,6 +36,7 @@ import {
   IconArrowRight,
   IconDeviceFloppy,
   IconSend,
+  IconUserPlus,
 } from "@tabler/icons-react";
 import { useItemStore } from "../../../shared/stores/itemStore";
 import { useOrderStore } from "../../../shared/stores/orderStore";
@@ -56,6 +59,7 @@ interface ConfiguredItem {
   material?: string;
   finishing: string[];
   discountPercent: number;
+  overrideUnitPrice?: number; // harga satuan manual
   notes?: string;
   // Calculated
   unitPrice: number;
@@ -103,7 +107,7 @@ function calculateFinishingCost(
 
 function calculateConfiguredItem(
   item: Item,
-  config: Partial<ConfiguredItem>,
+  config: Partial<ConfiguredItem> & { overrideUnitPrice?: number },
 ): ConfiguredItem {
   const quantity = config.quantity || item.minOrder || 1;
   const width = config.width || item.defaultWidth;
@@ -114,15 +118,20 @@ function calculateConfiguredItem(
   const discountPercent = config.discountPercent || 0;
 
   const basePrice = calculateItemPrice(item, { quantity, width, height, area });
-  const discountedPrice = basePrice * (1 - discountPercent / 100);
+  // Jika ada override harga satuan, gunakan langsung (abaikan diskon%)
+  const effectiveUnitPrice =
+    config.overrideUnitPrice && config.overrideUnitPrice > 0
+      ? config.overrideUnitPrice
+      : basePrice * (1 - discountPercent / 100);
+
   const finishingCost = calculateFinishingCost(item, finishing, area, quantity);
   const setupFee = item.setupFee || 0;
 
   let subtotal: number;
   if (item.pricingModel === "area") {
-    subtotal = discountedPrice * area * quantity + finishingCost + setupFee;
+    subtotal = effectiveUnitPrice * area * quantity + finishingCost + setupFee;
   } else {
-    subtotal = discountedPrice * quantity + finishingCost + setupFee;
+    subtotal = effectiveUnitPrice * quantity + finishingCost + setupFee;
   }
 
   return {
@@ -134,9 +143,16 @@ function calculateConfiguredItem(
     area,
     material: config.material,
     finishing,
-    discountPercent,
+    discountPercent:
+      config.overrideUnitPrice && config.overrideUnitPrice > 0
+        ? 0
+        : discountPercent,
+    overrideUnitPrice:
+      config.overrideUnitPrice && config.overrideUnitPrice > 0
+        ? config.overrideUnitPrice
+        : undefined,
     notes: config.notes,
-    unitPrice: discountedPrice,
+    unitPrice: effectiveUnitPrice,
     finishingCost,
     setupFee,
     subtotal,
@@ -155,6 +171,7 @@ export default function CreateOrderPage() {
   const items = useItemStore((s) => s.items);
   const addOrder = useOrderStore((s) => s.addOrder);
   const customers = useCustomerStore((s) => s.customers);
+  const addCustomer = useCustomerStore((s) => s.addCustomer);
   const businesses = useBusinessStore((s) => s.businesses);
   const user = useAuthStore((s) => s.user);
 
@@ -183,11 +200,49 @@ export default function CreateOrderPage() {
       material: "",
       finishing: [] as string[],
       discountPercent: 0,
+      overrideUnitPrice: 0,
       notes: "",
     },
   });
 
-  // Filter items by search + category
+  // Modal tambah pelanggan baru
+  const [
+    customerModalOpened,
+    { open: openCustomerModal, close: closeCustomerModal },
+  ] = useDisclosure(false);
+  const customerForm = useForm({
+    initialValues: {
+      name: "",
+      phone: "",
+      email: "",
+      company: "",
+      address: "",
+    },
+    validate: {
+      name: (v) => (v.trim() ? null : "Nama pelanggan wajib diisi"),
+    },
+  });
+
+  const handleAddCustomer = (values: typeof customerForm.values) => {
+    if (!user) return;
+    const newCustomer = addCustomer({
+      name: values.name.trim(),
+      phone: values.phone.trim() || undefined,
+      email: values.email.trim() || undefined,
+      company: values.company.trim() || undefined,
+      address: values.address.trim() || undefined,
+      businessId: user.businessId,
+    });
+    // Auto-select pelanggan baru
+    orderForm.setFieldValue("customerId", newCustomer.id);
+    notifications.show({
+      title: "Pelanggan Ditambahkan",
+      message: `${newCustomer.name} berhasil ditambahkan`,
+      color: "green",
+    });
+    customerForm.reset();
+    closeCustomerModal();
+  };
   const activeItems = items.filter((i) => i.isActive);
   const categories = useMemo(
     () => [...new Set(activeItems.map((i) => i.category))],
@@ -220,6 +275,7 @@ export default function CreateOrderPage() {
       material: item.materialOptions?.[0] || "",
       finishing: [],
       discountPercent: 0,
+      overrideUnitPrice: 0,
       notes: "",
     });
   };
@@ -235,6 +291,7 @@ export default function CreateOrderPage() {
       material: configForm.values.material || undefined,
       finishing: configForm.values.finishing,
       discountPercent: configForm.values.discountPercent,
+      overrideUnitPrice: configForm.values.overrideUnitPrice || undefined,
       notes: configForm.values.notes || undefined,
     });
     setConfiguredItems((prev) => [...prev, newItem]);
@@ -250,9 +307,9 @@ export default function CreateOrderPage() {
   // Submit order
   const submitOrder = (asDraft: boolean) => {
     if (!user) return;
-    if (!asDraft && !orderForm.validate().hasErrors === false) {
-      orderForm.validate();
-      if (orderForm.validate().hasErrors) return;
+    if (!asDraft) {
+      const validation = orderForm.validate();
+      if (validation.hasErrors) return;
     }
 
     const customer = customers.find(
@@ -520,14 +577,42 @@ export default function CreateOrderPage() {
                         />
                       )}
 
-                    {/* Discount */}
+                    {/* Override harga satuan */}
                     <NumberInput
-                      label="Diskon (%)"
+                      label="Override Harga Satuan"
+                      description={
+                        <>
+                          Harga asli:{" "}
+                          <strong>
+                            {formatCurrency(
+                              calculateItemPrice(selectedItemForConfig, {
+                                quantity: configForm.values.quantity,
+                                width: configForm.values.width || undefined,
+                                height: configForm.values.height || undefined,
+                              }),
+                            )}
+                          </strong>{" "}
+                          — isi jika ingin ubah harga manual
+                        </>
+                      }
+                      placeholder="Kosongkan = pakai harga otomatis"
                       min={0}
-                      max={selectedItemForConfig.maxDiscount || 100}
-                      suffix="%"
-                      {...configForm.getInputProps("discountPercent")}
+                      prefix="Rp "
+                      thousandSeparator=","
+                      {...configForm.getInputProps("overrideUnitPrice")}
                     />
+
+                    {/* Discount — hanya tampil jika tidak ada override harga */}
+                    {(!configForm.values.overrideUnitPrice ||
+                      configForm.values.overrideUnitPrice <= 0) && (
+                      <NumberInput
+                        label="Diskon (%)"
+                        min={0}
+                        max={selectedItemForConfig.maxDiscount || 100}
+                        suffix="%"
+                        {...configForm.getInputProps("discountPercent")}
+                      />
+                    )}
 
                     <Textarea
                       label="Catatan Item"
@@ -547,17 +632,33 @@ export default function CreateOrderPage() {
                           material: configForm.values.material || undefined,
                           finishing: configForm.values.finishing,
                           discountPercent: configForm.values.discountPercent,
+                          overrideUnitPrice:
+                            configForm.values.overrideUnitPrice || undefined,
                         },
                       );
+                      const isOverride =
+                        configForm.values.overrideUnitPrice &&
+                        configForm.values.overrideUnitPrice > 0;
                       return (
                         <Stack gap={4}>
                           <Group justify="space-between">
                             <Text size="sm" c="dimmed">
                               Harga satuan
                             </Text>
-                            <Text size="sm">
-                              {formatCurrency(preview.unitPrice)}
-                            </Text>
+                            <Group gap={4}>
+                              {isOverride && (
+                                <Badge size="xs" color="orange" variant="light">
+                                  Custom
+                                </Badge>
+                              )}
+                              <Text
+                                size="sm"
+                                fw={isOverride ? 600 : undefined}
+                                c={isOverride ? "orange" : undefined}
+                              >
+                                {formatCurrency(preview.unitPrice)}
+                              </Text>
+                            </Group>
                           </Group>
                           {preview.finishingCost > 0 && (
                             <Group justify="space-between">
@@ -645,10 +746,17 @@ export default function CreateOrderPage() {
                                   Finishing: {ci.finishing.join(", ")}
                                 </Text>
                               )}
-                              {ci.discountPercent > 0 && (
-                                <Badge size="xs" color="red" variant="light">
-                                  Disc {ci.discountPercent}%
+                              {ci.overrideUnitPrice &&
+                              ci.overrideUnitPrice > 0 ? (
+                                <Badge size="xs" color="orange" variant="light">
+                                  Harga Custom
                                 </Badge>
+                              ) : (
+                                ci.discountPercent > 0 && (
+                                  <Badge size="xs" color="red" variant="light">
+                                    Disc {ci.discountPercent}%
+                                  </Badge>
+                                )
                               )}
                             </Stack>
                           </Table.Td>
@@ -695,16 +803,27 @@ export default function CreateOrderPage() {
               <Card withBorder>
                 <Stack gap="md">
                   <Text fw={600}>Informasi Order</Text>
-                  <Select
-                    label="Pelanggan"
-                    placeholder="Pilih pelanggan"
-                    data={customers.map((c) => ({
-                      value: c.id,
-                      label: `${c.name}${c.company ? ` (${c.company})` : ""}`,
-                    }))}
-                    searchable
-                    {...orderForm.getInputProps("customerId")}
-                  />
+                  <Group align="flex-end" gap="xs">
+                    <Select
+                      label="Pelanggan"
+                      placeholder="Pilih pelanggan"
+                      data={customers.map((c) => ({
+                        value: c.id,
+                        label: `${c.name}${c.company ? ` (${c.company})` : ""}`,
+                      }))}
+                      searchable
+                      style={{ flex: 1 }}
+                      {...orderForm.getInputProps("customerId")}
+                    />
+                    <Button
+                      variant="light"
+                      leftSection={<IconUserPlus size={16} />}
+                      onClick={openCustomerModal}
+                      mb={1}
+                    >
+                      Baru
+                    </Button>
+                  </Group>
                   <DateInput
                     label="Deadline"
                     placeholder="Pilih tanggal deadline"
@@ -903,11 +1022,7 @@ export default function CreateOrderPage() {
                   </Button>
                   <Button
                     leftSection={<IconSend size={16} />}
-                    onClick={() => {
-                      if (!orderForm.validate().hasErrors) {
-                        submitOrder(false);
-                      }
-                    }}
+                    onClick={() => submitOrder(false)}
                   >
                     Kirim ke Kasir
                   </Button>
@@ -940,6 +1055,54 @@ export default function CreateOrderPage() {
           )}
         </Group>
       )}
+
+      {/* ===== MODAL TAMBAH PELANGGAN BARU ===== */}
+      <Modal
+        opened={customerModalOpened}
+        onClose={closeCustomerModal}
+        title="Tambah Pelanggan Baru"
+        centered
+      >
+        <form onSubmit={customerForm.onSubmit(handleAddCustomer)}>
+          <Stack gap="sm">
+            <TextInput
+              label="Nama Pelanggan"
+              placeholder="Nama lengkap"
+              required
+              {...customerForm.getInputProps("name")}
+            />
+            <TextInput
+              label="No. Telepon"
+              placeholder="08xxx"
+              {...customerForm.getInputProps("phone")}
+            />
+            <TextInput
+              label="Email"
+              placeholder="email@contoh.com"
+              {...customerForm.getInputProps("email")}
+            />
+            <TextInput
+              label="Perusahaan / Instansi"
+              placeholder="Nama perusahaan (opsional)"
+              {...customerForm.getInputProps("company")}
+            />
+            <Textarea
+              label="Alamat"
+              placeholder="Alamat lengkap (opsional)"
+              rows={2}
+              {...customerForm.getInputProps("address")}
+            />
+            <Group mt="md" grow>
+              <Button variant="outline" onClick={closeCustomerModal}>
+                Batal
+              </Button>
+              <Button type="submit" leftSection={<IconUserPlus size={16} />}>
+                Simpan Pelanggan
+              </Button>
+            </Group>
+          </Stack>
+        </form>
+      </Modal>
     </Stack>
   );
 }
