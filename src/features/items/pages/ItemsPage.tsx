@@ -17,7 +17,6 @@ import {
   SegmentedControl,
   Paper,
   Switch,
-  MultiSelect,
   Divider,
   ScrollArea,
   Tooltip,
@@ -35,15 +34,12 @@ import {
   IconRulerMeasure,
   IconTag,
   IconChartBar,
-  IconSettings,
   IconBarcode,
   IconClock,
   IconReceipt,
 } from "@tabler/icons-react";
 import { useItemStore } from "../../../shared/stores/itemStore";
 import { useAuthStore } from "../../../shared/stores/authStore";
-import { useFinishingStore } from "../../../shared/stores/finishingStore";
-import { useMaterialStore } from "../../../shared/stores/materialStore";
 import { formatCurrency } from "../../../shared/utils";
 import { UNIT_OPTIONS, AREA_UNIT_OPTIONS } from "../../../shared/constants";
 import { useCategoryStore } from "../../../shared/stores/categoryStore";
@@ -63,8 +59,6 @@ interface FormValues {
   defaultWidth: number;
   defaultHeight: number;
   tiers: TierPrice[];
-  finishingIds: string[];
-  materialIds: string[];
   minOrder: number;
   setupFee: number;
   maxDiscount: number;
@@ -81,25 +75,12 @@ export default function ItemsPage() {
   const user = useAuthStore((state) => state.user);
   const categories = useCategoryStore((state) => state.categories);
   const categoryNames = categories.map((c) => c.name);
-  const finishings = useFinishingStore((state) => state.finishings);
-  const materials = useMaterialStore((state) => state.materials);
 
   const [opened, { open, close }] = useDisclosure(false);
   const [editingItem, setEditingItem] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [filterCategory, setFilterCategory] = useState<string | null>(null);
   const [filterPricing, setFilterPricing] = useState<string | null>(null);
-
-  // Finishing/material select data from stores
-  const finishingSelectData = finishings
-    .filter((f) => f.isActive)
-    .map((f) => ({
-      value: f.id,
-      label: `${f.name} (+${formatCurrency(f.price)})`,
-    }));
-  const materialSelectData = materials
-    .filter((m) => m.isActive)
-    .map((m) => ({ value: m.id, label: m.name }));
 
   const form = useForm<FormValues>({
     initialValues: {
@@ -116,8 +97,6 @@ export default function ItemsPage() {
       defaultWidth: 0,
       defaultHeight: 0,
       tiers: [{ minQty: 1, maxQty: 10, price: 0 }],
-      finishingIds: [],
-      materialIds: [],
       minOrder: 1,
       setupFee: 0,
       maxDiscount: 100,
@@ -185,34 +164,11 @@ export default function ItemsPage() {
     }
 
     const subtotal = baseUnit * qty;
-    let finishingTotal = 0;
-    const finishingLines: string[] = [];
-    for (const fId of form.values.finishingIds) {
-      const fo = finishings.find((f) => f.id === fId);
-      if (!fo) continue;
-      let fCost = 0;
-      if (fo.pricingType === "per_unit") {
-        fCost = fo.price * qty;
-        finishingLines.push(
-          `${fo.name}: ${formatCurrency(fo.price)} × ${qty} = ${formatCurrency(fCost)}`,
-        );
-      } else if (fo.pricingType === "per_area" && pm === "area") {
-        const area = areaSize || 1;
-        fCost = fo.price * area * qty;
-        finishingLines.push(
-          `${fo.name}: ${formatCurrency(fo.price)}/m² × ${area}m² × ${qty} = ${formatCurrency(fCost)}`,
-        );
-      } else {
-        fCost = fo.price;
-        finishingLines.push(`${fo.name}: ${formatCurrency(fCost)} (flat)`);
-      }
-      finishingTotal += fCost;
-    }
 
     const setup = form.values.setupFee || 0;
-    const total = subtotal + finishingTotal + setup;
+    const total = subtotal + setup;
 
-    return { qty, subtotal, finishingLines, finishingTotal, setup, total };
+    return { qty, subtotal, setup, total };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     form.values.pricingModel,
@@ -221,10 +177,8 @@ export default function ItemsPage() {
     form.values.defaultWidth,
     form.values.defaultHeight,
     form.values.tiers,
-    form.values.finishingIds,
     form.values.setupFee,
     form.values.unit,
-    finishings,
   ]);
 
   const handleOpenModal = (itemId?: string) => {
@@ -248,13 +202,6 @@ export default function ItemsPage() {
             item.tiers && item.tiers.length > 0
               ? item.tiers
               : [{ minQty: 1, maxQty: 10, price: 0 }],
-          finishingIds: (item.finishingOptions || []).map((fo) => fo.id),
-          materialIds: (item.materialOptions || [])
-            .map((name) => {
-              const mat = materials.find((m) => m.name === name);
-              return mat?.id || "";
-            })
-            .filter(Boolean),
           minOrder: item.minOrder || 1,
           setupFee: item.setupFee || 0,
           maxDiscount: item.maxDiscount ?? 100,
@@ -301,35 +248,6 @@ export default function ItemsPage() {
       defaultHeight:
         values.pricingModel === "area" && values.defaultHeight > 0
           ? values.defaultHeight
-          : undefined,
-      finishingOptions:
-        values.finishingIds.length > 0
-          ? (values.finishingIds
-              .map((fId) => {
-                const f = finishings.find((fin) => fin.id === fId);
-                if (!f) return null;
-                return {
-                  id: f.id,
-                  name: f.name,
-                  price: f.price,
-                  pricingType: f.pricingType,
-                };
-              })
-              .filter(Boolean) as {
-              id: string;
-              name: string;
-              price: number;
-              pricingType: "per_unit" | "per_area" | "flat";
-            }[])
-          : undefined,
-      materialOptions:
-        values.materialIds.length > 0
-          ? (values.materialIds
-              .map((mId) => {
-                const m = materials.find((mat) => mat.id === mId);
-                return m?.name || null;
-              })
-              .filter(Boolean) as string[])
           : undefined,
       minOrder: values.minOrder,
       setupFee: values.setupFee,
@@ -877,47 +795,7 @@ export default function ItemsPage() {
                 </Stack>
               </Paper>
 
-              {/* ========== SECTION 3: MATERIAL & FINISHING ========== */}
-              <Paper p="md" withBorder radius="md">
-                <Group gap="xs" mb="sm">
-                  <ThemeIcon size="sm" variant="light" color="aqua">
-                    <IconSettings size={14} />
-                  </ThemeIcon>
-                  <Text size="sm" fw={600}>
-                    ③ Material & Finishing
-                  </Text>
-                </Group>
-
-                <Stack gap="sm">
-                  <MultiSelect
-                    label="Opsi Material"
-                    placeholder="Pilih material yang tersedia"
-                    description="Data diambil dari modul Material"
-                    data={materialSelectData}
-                    searchable
-                    {...form.getInputProps("materialIds")}
-                  />
-
-                  <MultiSelect
-                    label="Opsi Finishing"
-                    placeholder="Pilih finishing yang tersedia"
-                    description="Data diambil dari modul Finishing"
-                    data={finishingSelectData}
-                    searchable
-                    {...form.getInputProps("finishingIds")}
-                  />
-
-                  {finishingSelectData.length === 0 &&
-                    materialSelectData.length === 0 && (
-                      <Text size="xs" c="dimmed" ta="center">
-                        Belum ada data finishing/material. Tambahkan dulu di
-                        menu Finishing atau Material.
-                      </Text>
-                    )}
-                </Stack>
-              </Paper>
-
-              {/* ========== SECTION 4: PENGATURAN ========== */}
+              {/* ========== SECTION 3: PENGATURAN ========== */}
               <Paper p="md" withBorder radius="md">
                 <Group gap="xs" mb="sm">
                   <ThemeIcon size="sm" variant="light" color="aqua">
@@ -1002,25 +880,6 @@ export default function ItemsPage() {
                         {formatCurrency(priceSimulation.subtotal)}
                       </Text>
                     </Group>
-
-                    {priceSimulation.finishingLines.map((line, i) => (
-                      <Group key={i} justify="space-between">
-                        <Text size="xs" c="dimmed" pl="sm">
-                          + {line}
-                        </Text>
-                      </Group>
-                    ))}
-
-                    {priceSimulation.finishingTotal > 0 && (
-                      <Group justify="space-between">
-                        <Text size="sm" c="dimmed">
-                          Total Finishing
-                        </Text>
-                        <Text size="sm">
-                          +{formatCurrency(priceSimulation.finishingTotal)}
-                        </Text>
-                      </Group>
-                    )}
 
                     {priceSimulation.setup > 0 && (
                       <Group justify="space-between">

@@ -15,7 +15,6 @@ import { useDisclosure } from "@mantine/hooks";
 import { useNavigate, useLocation } from "react-router-dom";
 import {
   IconDashboard,
-  IconTool,
   IconFileText,
   IconBox,
   IconChartBar,
@@ -27,8 +26,7 @@ import {
   IconUsers,
   IconFilePlus,
   IconCash,
-  IconPaint,
-  IconStack3,
+  IconClockHour4,
 } from "@tabler/icons-react";
 import { useAuthStore } from "../shared/stores/authStore";
 import { ROUTES } from "../core/routes";
@@ -70,33 +68,15 @@ export default function MainLayout({ children }: MainLayoutProps) {
       roles: ["kasir"],
     },
     {
-      label: "Produksi",
-      icon: IconTool,
-      path: ROUTES.PRODUCTION,
-      roles: ["produksi"],
-    },
-    {
       label: "Orders",
       icon: IconFileText,
       path: ROUTES.ORDERS,
-      roles: ["owner", "kasir", "produksi", "designer"],
+      roles: ["owner", "kasir", "designer"],
     },
     {
       label: "Barang",
       icon: IconBox,
       path: ROUTES.ITEMS,
-      roles: ["owner"],
-    },
-    {
-      label: "Finishing",
-      icon: IconPaint,
-      path: ROUTES.FINISHING,
-      roles: ["owner"],
-    },
-    {
-      label: "Material",
-      icon: IconStack3,
-      path: ROUTES.MATERIAL,
       roles: ["owner"],
     },
     {
@@ -115,6 +95,12 @@ export default function MainLayout({ children }: MainLayoutProps) {
       label: "Laporan",
       icon: IconChartBar,
       path: ROUTES.REPORTS,
+      roles: ["owner"],
+    },
+    {
+      label: "Laporan Shift",
+      icon: IconClockHour4,
+      path: ROUTES.SHIFT_REPORT,
       roles: ["owner"],
     },
   ];

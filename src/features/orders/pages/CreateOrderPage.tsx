@@ -11,7 +11,6 @@ import {
   TextInput,
   NumberInput,
   Select,
-  MultiSelect,
   Textarea,
   Badge,
   Stack,
@@ -56,14 +55,11 @@ interface ConfiguredItem {
   width?: number;
   height?: number;
   area?: number;
-  material?: string;
-  finishing: string[];
   discountPercent: number;
   overrideUnitPrice?: number; // harga satuan manual
   notes?: string;
   // Calculated
   unitPrice: number;
-  finishingCost: number;
   setupFee: number;
   subtotal: number;
 }
@@ -86,25 +82,6 @@ function calculateItemPrice(
   return item.price;
 }
 
-function calculateFinishingCost(
-  item: Item,
-  finishing: string[],
-  area: number,
-  quantity: number,
-): number {
-  if (!item.finishingOptions || finishing.length === 0) return 0;
-  let total = 0;
-  for (const finName of finishing) {
-    const opt = item.finishingOptions.find((f) => f.name === finName);
-    if (!opt) continue;
-    if (opt.pricingType === "per_unit") total += opt.price * quantity;
-    else if (opt.pricingType === "per_area")
-      total += opt.price * area * quantity;
-    else if (opt.pricingType === "flat") total += opt.price;
-  }
-  return total;
-}
-
 function calculateConfiguredItem(
   item: Item,
   config: Partial<ConfiguredItem> & { overrideUnitPrice?: number },
@@ -114,7 +91,6 @@ function calculateConfiguredItem(
   const height = config.height || item.defaultHeight;
   const area =
     item.pricingModel === "area" && width && height ? width * height : 0;
-  const finishing = config.finishing || [];
   const discountPercent = config.discountPercent || 0;
 
   const basePrice = calculateItemPrice(item, { quantity, width, height, area });
@@ -124,14 +100,13 @@ function calculateConfiguredItem(
       ? config.overrideUnitPrice
       : basePrice * (1 - discountPercent / 100);
 
-  const finishingCost = calculateFinishingCost(item, finishing, area, quantity);
   const setupFee = item.setupFee || 0;
 
   let subtotal: number;
   if (item.pricingModel === "area") {
-    subtotal = effectiveUnitPrice * area * quantity + finishingCost + setupFee;
+    subtotal = effectiveUnitPrice * area * quantity + setupFee;
   } else {
-    subtotal = effectiveUnitPrice * quantity + finishingCost + setupFee;
+    subtotal = effectiveUnitPrice * quantity + setupFee;
   }
 
   return {
@@ -141,8 +116,6 @@ function calculateConfiguredItem(
     width,
     height,
     area,
-    material: config.material,
-    finishing,
     discountPercent:
       config.overrideUnitPrice && config.overrideUnitPrice > 0
         ? 0
@@ -153,7 +126,6 @@ function calculateConfiguredItem(
         : undefined,
     notes: config.notes,
     unitPrice: effectiveUnitPrice,
-    finishingCost,
     setupFee,
     subtotal,
   };
@@ -197,8 +169,6 @@ export default function CreateOrderPage() {
       quantity: 1,
       width: 0,
       height: 0,
-      material: "",
-      finishing: [] as string[],
       discountPercent: 0,
       overrideUnitPrice: 0,
       notes: "",
@@ -272,8 +242,6 @@ export default function CreateOrderPage() {
       quantity: item.minOrder || 1,
       width: item.defaultWidth || 0,
       height: item.defaultHeight || 0,
-      material: item.materialOptions?.[0] || "",
-      finishing: [],
       discountPercent: 0,
       overrideUnitPrice: 0,
       notes: "",
@@ -288,8 +256,6 @@ export default function CreateOrderPage() {
       quantity: configForm.values.quantity,
       width: configForm.values.width || undefined,
       height: configForm.values.height || undefined,
-      material: configForm.values.material || undefined,
-      finishing: configForm.values.finishing,
       discountPercent: configForm.values.discountPercent,
       overrideUnitPrice: configForm.values.overrideUnitPrice || undefined,
       notes: configForm.values.notes || undefined,
@@ -323,8 +289,7 @@ export default function CreateOrderPage() {
       width: ci.width,
       height: ci.height,
       area: ci.area,
-      material: ci.material,
-      finishing: ci.finishing,
+      finishing: [],
       pricePerSqm:
         ci.item.pricingModel === "area" ? ci.item.pricePerSqm : undefined,
       originalPrice: ci.item.price,
@@ -552,31 +517,6 @@ export default function CreateOrderPage() {
                       {...configForm.getInputProps("quantity")}
                     />
 
-                    {/* Material */}
-                    {selectedItemForConfig.materialOptions &&
-                      selectedItemForConfig.materialOptions.length > 0 && (
-                        <Select
-                          label="Material"
-                          data={selectedItemForConfig.materialOptions}
-                          {...configForm.getInputProps("material")}
-                        />
-                      )}
-
-                    {/* Finishing */}
-                    {selectedItemForConfig.finishingOptions &&
-                      selectedItemForConfig.finishingOptions.length > 0 && (
-                        <MultiSelect
-                          label="Finishing"
-                          data={selectedItemForConfig.finishingOptions.map(
-                            (f) => ({
-                              value: f.name,
-                              label: `${f.name} (+${formatCurrency(f.price)} ${f.pricingType === "per_unit" ? "/pcs" : f.pricingType === "per_area" ? "/m²" : "flat"})`,
-                            }),
-                          )}
-                          {...configForm.getInputProps("finishing")}
-                        />
-                      )}
-
                     {/* Override harga satuan */}
                     <NumberInput
                       label="Override Harga Satuan"
@@ -629,8 +569,6 @@ export default function CreateOrderPage() {
                           quantity: configForm.values.quantity,
                           width: configForm.values.width || undefined,
                           height: configForm.values.height || undefined,
-                          material: configForm.values.material || undefined,
-                          finishing: configForm.values.finishing,
                           discountPercent: configForm.values.discountPercent,
                           overrideUnitPrice:
                             configForm.values.overrideUnitPrice || undefined,
@@ -660,16 +598,6 @@ export default function CreateOrderPage() {
                               </Text>
                             </Group>
                           </Group>
-                          {preview.finishingCost > 0 && (
-                            <Group justify="space-between">
-                              <Text size="sm" c="dimmed">
-                                Finishing
-                              </Text>
-                              <Text size="sm">
-                                {formatCurrency(preview.finishingCost)}
-                              </Text>
-                            </Group>
-                          )}
                           {preview.setupFee > 0 && (
                             <Group justify="space-between">
                               <Text size="sm" c="dimmed">
@@ -736,14 +664,6 @@ export default function CreateOrderPage() {
                                 <Text size="xs">
                                   {ci.width}×{ci.height}m ={" "}
                                   {ci.area?.toFixed(2)}m²
-                                </Text>
-                              )}
-                              {ci.material && (
-                                <Text size="xs">Material: {ci.material}</Text>
-                              )}
-                              {ci.finishing.length > 0 && (
-                                <Text size="xs">
-                                  Finishing: {ci.finishing.join(", ")}
                                 </Text>
                               )}
                               {ci.overrideUnitPrice &&
@@ -911,14 +831,6 @@ export default function CreateOrderPage() {
                               <Text size="xs">
                                 {ci.width}×{ci.height}m ({ci.area?.toFixed(2)}
                                 m²)
-                              </Text>
-                            )}
-                            {ci.material && (
-                              <Text size="xs">Material: {ci.material}</Text>
-                            )}
-                            {ci.finishing.length > 0 && (
-                              <Text size="xs">
-                                Finishing: {ci.finishing.join(", ")}
                               </Text>
                             )}
                             {ci.discountPercent > 0 && (

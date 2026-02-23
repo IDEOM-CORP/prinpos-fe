@@ -9,21 +9,17 @@ import { ROUTES } from "./routes";
 import LoginPage from "../features/auth/pages/LoginPage";
 import DashboardPage from "../features/dashboard/pages/DashboardPage";
 import CashierPage from "../features/cashier/pages/CashierPage";
-import ProductionPage from "../features/production/pages/ProductionPage";
 import OrdersPage from "../features/orders/pages/OrdersPage";
 import OrderDetailPage from "../features/orders/pages/OrderDetailPage";
 
 import ItemsPage from "../features/items/pages/ItemsPage";
-import FinishingListPage from "../features/finishing/pages/FinishingListPage";
-import FinishingFormPage from "../features/finishing/pages/FinishingFormPage";
-import MaterialListPage from "../features/material/pages/MaterialListPage";
-import MaterialFormPage from "../features/material/pages/MaterialFormPage";
 import CategoriesPage from "../features/categories/pages/CategoriesPage";
 import CustomersPage from "../features/customers/pages/CustomersPage";
 import UsersPage from "../features/users/pages/UsersPage";
 import BusinessesPage from "../features/business/pages/BusinessesPage";
 import BranchesPage from "../features/business/pages/BranchesPage";
 import ReportsPage from "../features/reports/pages/ReportsPage";
+import ShiftReportPage from "../features/cashier/pages/ShiftReportPage";
 import ProfilePage from "../features/profile/pages/ProfilePage";
 import ProtectedRoute from "../shared/components/ProtectedRoute";
 
@@ -81,27 +77,17 @@ function App() {
         <Route element={<ProtectedRoute allowedRoles={["owner"]} />}>
           <Route path={ROUTES.DASHBOARD} element={<DashboardPage />} />
           <Route path={ROUTES.ITEMS} element={<ItemsPage />} />
-          <Route path={ROUTES.FINISHING} element={<FinishingListPage />} />
-          <Route path={ROUTES.FINISHING_ADD} element={<FinishingFormPage />} />
-          <Route path={ROUTES.FINISHING_EDIT} element={<FinishingFormPage />} />
-          <Route path={ROUTES.MATERIAL} element={<MaterialListPage />} />
-          <Route path={ROUTES.MATERIAL_ADD} element={<MaterialFormPage />} />
-          <Route path={ROUTES.MATERIAL_EDIT} element={<MaterialFormPage />} />
           <Route path={ROUTES.CATEGORIES} element={<CategoriesPage />} />
           <Route path={ROUTES.USERS} element={<UsersPage />} />
           <Route path={ROUTES.ORGANIZATIONS} element={<BusinessesPage />} />
           <Route path={ROUTES.BRANCHES} element={<BranchesPage />} />
           <Route path={ROUTES.REPORTS} element={<ReportsPage />} />
+          <Route path={ROUTES.SHIFT_REPORT} element={<ShiftReportPage />} />
         </Route>
 
         {/* Kasir routes */}
         <Route element={<ProtectedRoute allowedRoles={["kasir"]} />}>
           <Route path={ROUTES.CASHIER} element={<CashierPage />} />
-        </Route>
-
-        {/* Produksi routes */}
-        <Route element={<ProtectedRoute allowedRoles={["produksi"]} />}>
-          <Route path={ROUTES.PRODUCTION} element={<ProductionPage />} />
         </Route>
 
         {/* Designer + Owner: create order */}
@@ -114,9 +100,7 @@ function App() {
         {/* All client roles: orders, detail, invoice, customers, profile */}
         <Route
           element={
-            <ProtectedRoute
-              allowedRoles={["owner", "kasir", "produksi", "designer"]}
-            />
+            <ProtectedRoute allowedRoles={["owner", "kasir", "designer"]} />
           }
         >
           <Route path={ROUTES.ORDERS} element={<OrdersPage />} />

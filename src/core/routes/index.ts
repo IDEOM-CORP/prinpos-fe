@@ -47,6 +47,7 @@ export const ROUTES = {
 
   // Reports
   REPORTS: "/reports",
+  SHIFT_REPORT: "/shift-report",
 
   // Profile
   PROFILE: "/profile",

@@ -32,11 +32,21 @@ import {
   IconAlertCircle,
   IconCheck,
   IconArrowRight,
+  IconArrowUpRight,
+  IconArrowDownRight,
+  IconClock,
+  IconDoorEnter,
+  IconDoorExit,
 } from "@tabler/icons-react";
 import type { Order } from "../../../shared/types";
 import { useOrderStore } from "../../../shared/stores/orderStore";
 import { useAuthStore } from "../../../shared/stores/authStore";
 import { useBusinessStore } from "../../../shared/stores/businessStore";
+import {
+  useShiftStore,
+  CASH_IN_CATEGORIES,
+  CASH_OUT_CATEGORIES,
+} from "../../../shared/stores/shiftStore";
 import { formatCurrency, formatDateTime } from "../../../shared/utils";
 import {
   ORDER_STATUS_LABELS,
@@ -53,6 +63,17 @@ export default function CashierPage() {
   const user = useAuthStore((s) => s.user);
   const branches = useBusinessStore((s) => s.branches);
 
+  // Shift store
+  const openShiftAction = useShiftStore((s) => s.openShift);
+  const closeShiftAction = useShiftStore((s) => s.closeShift);
+  const getActiveShift = useShiftStore((s) => s.getActiveShift);
+  const addCashTransaction = useShiftStore((s) => s.addCashTransaction);
+  const recordOrderPayment = useShiftStore((s) => s.recordOrderPayment);
+
+  const userBranchId = user?.branchId || "";
+  const activeShift = getActiveShift(userBranchId);
+
+  // States
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [branchFilter, setBranchFilter] = useState<string | null>(null);
@@ -74,6 +95,24 @@ export default function CashierPage() {
     remaining: number;
     method: string;
   } | null>(null);
+
+  // Shift modals
+  const [openShiftModal, { open: showOpenShift, close: hideOpenShift }] =
+    useDisclosure(false);
+  const [closeShiftModal, { open: showCloseShift, close: hideCloseShift }] =
+    useDisclosure(false);
+  const [cashTxModal, { open: showCashTx, close: hideCashTx }] =
+    useDisclosure(false);
+  const [cashTxType, setCashTxType] = useState<"cash_in" | "cash_out">(
+    "cash_in",
+  );
+
+  // Shift form states
+  const [openingBalance, setOpeningBalance] = useState<number>(0);
+  const [actualCash, setActualCash] = useState<number>(0);
+  const [cashTxAmount, setCashTxAmount] = useState<number>(0);
+  const [cashTxCategory, setCashTxCategory] = useState("");
+  const [cashTxDescription, setCashTxDescription] = useState("");
 
   // Orders that need payment attention
   const payableOrders = useMemo(() => {
@@ -118,6 +157,9 @@ export default function CashierPage() {
       paymentNote || undefined,
     );
 
+    // Record to shift
+    recordOrderPayment(userBranchId, actualPaid, paymentMethod);
+
     notifications.show({
       title: "Pembayaran Diterima",
       message: `${formatCurrency(actualPaid)} untuk order ${selectedOrder.orderNumber}`,
@@ -140,6 +182,81 @@ export default function CashierPage() {
     openChangeModal();
   };
 
+  // === SHIFT HANDLERS ===
+  const handleOpenShift = () => {
+    if (!user) return;
+    try {
+      openShiftAction(userBranchId, user.id, user.name, openingBalance);
+      notifications.show({
+        title: "Shift Dibuka",
+        message: `Modal awal: ${formatCurrency(openingBalance)}`,
+        color: "green",
+      });
+      hideOpenShift();
+      setOpeningBalance(0);
+    } catch {
+      notifications.show({
+        title: "Error",
+        message: "Cabang ini sudah memiliki shift aktif",
+        color: "red",
+      });
+    }
+  };
+
+  const handleCloseShift = () => {
+    if (!user || !activeShift) return;
+    const result = closeShiftAction(
+      activeShift.id,
+      user.id,
+      user.name,
+      actualCash,
+    );
+    if (result) {
+      const diff = result.difference ?? 0;
+      notifications.show({
+        title: "Shift Ditutup",
+        message: `Selisih: ${diff >= 0 ? "+" : ""}${formatCurrency(diff)}`,
+        color: diff === 0 ? "green" : "orange",
+      });
+    }
+    hideCloseShift();
+    setActualCash(0);
+  };
+
+  const openCashIn = () => {
+    setCashTxType("cash_in");
+    setCashTxAmount(0);
+    setCashTxCategory("");
+    setCashTxDescription("");
+    showCashTx();
+  };
+
+  const openCashOut = () => {
+    setCashTxType("cash_out");
+    setCashTxAmount(0);
+    setCashTxCategory("");
+    setCashTxDescription("");
+    showCashTx();
+  };
+
+  const handleCashTransaction = () => {
+    if (!user || !activeShift || cashTxAmount <= 0 || !cashTxCategory) return;
+    addCashTransaction(
+      activeShift.id,
+      cashTxType,
+      cashTxAmount,
+      cashTxCategory,
+      cashTxDescription || cashTxCategory,
+      user.id,
+    );
+    notifications.show({
+      title: cashTxType === "cash_in" ? "Cash In" : "Cash Out",
+      message: `${formatCurrency(cashTxAmount)} — ${cashTxCategory}`,
+      color: cashTxType === "cash_in" ? "green" : "red",
+    });
+    hideCashTx();
+  };
+
   const outletBranches = branches.filter((b) => b.type === "outlet");
 
   const totalOutstanding = payableOrders.reduce(
@@ -147,15 +264,183 @@ export default function CashierPage() {
     0,
   );
 
+  // === NO ACTIVE SHIFT — SHOW OPEN SHIFT SCREEN ===
+  if (!activeShift) {
+    return (
+      <Stack gap="lg">
+        <Group justify="space-between">
+          <Title order={2}>Kasir</Title>
+        </Group>
+
+        <Card shadow="sm" padding="xl" radius="md" withBorder>
+          <Stack align="center" gap="lg" py="xl">
+            <ThemeIcon size={80} radius="xl" color="blue" variant="light">
+              <IconDoorEnter size={40} />
+            </ThemeIcon>
+            <Stack align="center" gap={4}>
+              <Title order={3}>Belum Ada Shift Aktif</Title>
+              <Text c="dimmed" ta="center">
+                Buka shift terlebih dahulu untuk mulai menerima pembayaran
+              </Text>
+            </Stack>
+            <Button
+              size="lg"
+              leftSection={<IconDoorEnter size={20} />}
+              onClick={showOpenShift}
+            >
+              Buka Shift
+            </Button>
+          </Stack>
+        </Card>
+
+        {/* Open Shift Modal */}
+        <Modal
+          opened={openShiftModal}
+          onClose={hideOpenShift}
+          title={<Text fw={600}>Buka Shift Baru</Text>}
+          centered
+        >
+          <Stack gap="md">
+            <Paper p="md" withBorder bg="gray.0" radius="md">
+              <Group gap="xs" mb="xs">
+                <IconClock size={16} />
+                <Text size="sm" fw={500}>
+                  Informasi
+                </Text>
+              </Group>
+              <Text size="sm" c="dimmed">
+                Kasir: <strong>{user?.name}</strong>
+              </Text>
+              <Text size="sm" c="dimmed">
+                Cabang:{" "}
+                <strong>
+                  {branches.find((b) => b.id === userBranchId)?.name || "-"}
+                </strong>
+              </Text>
+            </Paper>
+
+            <NumberInput
+              label="Modal Awal (Cash Drawer)"
+              placeholder="Masukkan jumlah kas awal"
+              leftSection="Rp"
+              thousandSeparator="."
+              decimalSeparator=","
+              min={0}
+              size="lg"
+              value={openingBalance}
+              onChange={(v) => setOpeningBalance(Number(v) || 0)}
+            />
+
+            <Group mt="md" grow>
+              <Button variant="outline" onClick={hideOpenShift}>
+                Batal
+              </Button>
+              <Button size="lg" onClick={handleOpenShift}>
+                Buka Shift
+              </Button>
+            </Group>
+          </Stack>
+        </Modal>
+      </Stack>
+    );
+  }
+
+  // Expected cash calculation
+  const expectedCash =
+    activeShift.openingBalance +
+    activeShift.totalCashIn +
+    activeShift.totalCashSales -
+    activeShift.totalCashOut;
+
+  // === ACTIVE SHIFT — SHOW CASHIER ===
   return (
     <Stack gap="lg">
+      {/* Header */}
       <Group justify="space-between">
         <Title order={2}>Pembayaran</Title>
-        <Badge size="lg" variant="light" color="orange">
-          {payableOrders.length} order menunggu • Outstanding:{" "}
-          {formatCurrency(totalOutstanding)}
-        </Badge>
+        <Group>
+          <Badge size="lg" variant="light" color="orange">
+            {payableOrders.length} order menunggu • Outstanding:{" "}
+            {formatCurrency(totalOutstanding)}
+          </Badge>
+        </Group>
       </Group>
+
+      {/* Shift Info Bar */}
+      <Card shadow="sm" padding="md" radius="md" withBorder>
+        <Group justify="space-between">
+          <Group gap="lg">
+            <Group gap="xs">
+              <Badge color="green" variant="dot" size="lg">
+                Shift Aktif
+              </Badge>
+              <Text size="sm" c="dimmed">
+                {user?.name} • sejak {formatDateTime(activeShift.openedAt)}
+              </Text>
+            </Group>
+            <Divider orientation="vertical" />
+            <Group gap="md">
+              <Stack gap={0}>
+                <Text size="xs" c="dimmed">
+                  Modal
+                </Text>
+                <Text size="sm" fw={500}>
+                  {formatCurrency(activeShift.openingBalance)}
+                </Text>
+              </Stack>
+              <Stack gap={0}>
+                <Text size="xs" c="dimmed">
+                  Cash Sales
+                </Text>
+                <Text size="sm" fw={500} c="green">
+                  {formatCurrency(activeShift.totalCashSales)}
+                </Text>
+              </Stack>
+              <Stack gap={0}>
+                <Text size="xs" c="dimmed">
+                  Expected Cash
+                </Text>
+                <Text size="sm" fw={600}>
+                  {formatCurrency(expectedCash)}
+                </Text>
+              </Stack>
+            </Group>
+          </Group>
+
+          <Group gap="xs">
+            <Button
+              size="xs"
+              variant="light"
+              color="green"
+              leftSection={<IconArrowUpRight size={14} />}
+              onClick={openCashIn}
+            >
+              Cash In
+            </Button>
+            <Button
+              size="xs"
+              variant="light"
+              color="red"
+              leftSection={<IconArrowDownRight size={14} />}
+              onClick={openCashOut}
+            >
+              Cash Out
+            </Button>
+            <Button
+              size="xs"
+              variant="outline"
+              color="gray"
+              leftSection={<IconDoorExit size={14} />}
+              onClick={() => {
+                setActualCash(expectedCash);
+                showCloseShift();
+              }}
+            >
+              Tutup Shift
+            </Button>
+          </Group>
+        </Group>
+      </Card>
 
       {/* Filters */}
       <Group>
@@ -613,6 +898,200 @@ export default function CashierPage() {
               </Stack>
             );
           })()}
+      </Modal>
+
+      {/* ===== MODAL TUTUP SHIFT ===== */}
+      <Modal
+        opened={closeShiftModal}
+        onClose={hideCloseShift}
+        title={<Text fw={600}>Tutup Shift</Text>}
+        centered
+        size="md"
+      >
+        {activeShift && (
+          <Stack gap="md">
+            <Paper p="md" withBorder bg="gray.0" radius="md">
+              <Stack gap="xs">
+                <Group justify="space-between">
+                  <Text size="sm" c="dimmed">
+                    Kasir
+                  </Text>
+                  <Text size="sm" fw={500}>
+                    {activeShift.openedByName}
+                  </Text>
+                </Group>
+                <Group justify="space-between">
+                  <Text size="sm" c="dimmed">
+                    Shift Dibuka
+                  </Text>
+                  <Text size="sm">{formatDateTime(activeShift.openedAt)}</Text>
+                </Group>
+                <Divider />
+                <Group justify="space-between">
+                  <Text size="sm">Modal Awal</Text>
+                  <Text size="sm" fw={500}>
+                    {formatCurrency(activeShift.openingBalance)}
+                  </Text>
+                </Group>
+                <Group justify="space-between">
+                  <Text size="sm" c="green">
+                    + Cash Sales
+                  </Text>
+                  <Text size="sm" c="green">
+                    {formatCurrency(activeShift.totalCashSales)}
+                  </Text>
+                </Group>
+                <Group justify="space-between">
+                  <Text size="sm" c="blue">
+                    + Cash In
+                  </Text>
+                  <Text size="sm" c="blue">
+                    {formatCurrency(activeShift.totalCashIn)}
+                  </Text>
+                </Group>
+                <Group justify="space-between">
+                  <Text size="sm" c="red">
+                    - Cash Out
+                  </Text>
+                  <Text size="sm" c="red">
+                    {formatCurrency(activeShift.totalCashOut)}
+                  </Text>
+                </Group>
+                <Divider variant="dashed" />
+                <Group justify="space-between">
+                  <Text size="sm">Non-Cash (Transfer/QRIS)</Text>
+                  <Text size="sm">
+                    {formatCurrency(activeShift.totalNonCash)}
+                  </Text>
+                </Group>
+                <Group justify="space-between">
+                  <Text size="sm">Total Transaksi</Text>
+                  <Text size="sm">
+                    {activeShift.orderPaymentCount} transaksi
+                  </Text>
+                </Group>
+                <Divider />
+                <Group justify="space-between">
+                  <Text fw={700}>Expected Cash</Text>
+                  <Text fw={700} size="lg">
+                    {formatCurrency(expectedCash)}
+                  </Text>
+                </Group>
+              </Stack>
+            </Paper>
+
+            <NumberInput
+              label="Uang Fisik di Cash Drawer"
+              placeholder="Hitung dan masukkan jumlah uang"
+              leftSection="Rp"
+              thousandSeparator="."
+              decimalSeparator=","
+              min={0}
+              size="lg"
+              value={actualCash}
+              onChange={(v) => setActualCash(Number(v) || 0)}
+            />
+
+            {/* Preview selisih */}
+            <Paper p="md" withBorder radius="md">
+              <Group justify="space-between">
+                <Text fw={600}>Selisih</Text>
+                <Text
+                  fw={700}
+                  size="lg"
+                  c={
+                    actualCash - expectedCash === 0
+                      ? "green"
+                      : actualCash - expectedCash > 0
+                        ? "blue"
+                        : "red"
+                  }
+                >
+                  {actualCash - expectedCash >= 0 ? "+" : ""}
+                  {formatCurrency(actualCash - expectedCash)}
+                </Text>
+              </Group>
+              <Text size="xs" c="dimmed" mt={4}>
+                {actualCash - expectedCash === 0
+                  ? "Pas! Tidak ada selisih"
+                  : actualCash - expectedCash > 0
+                    ? "Kelebihan kas"
+                    : "Kekurangan kas"}
+              </Text>
+            </Paper>
+
+            <Group mt="md" grow>
+              <Button variant="outline" onClick={hideCloseShift}>
+                Batal
+              </Button>
+              <Button
+                color="red"
+                leftSection={<IconDoorExit size={16} />}
+                onClick={handleCloseShift}
+              >
+                Tutup Shift
+              </Button>
+            </Group>
+          </Stack>
+        )}
+      </Modal>
+
+      {/* ===== MODAL CASH IN / OUT ===== */}
+      <Modal
+        opened={cashTxModal}
+        onClose={hideCashTx}
+        title={
+          <Text fw={600}>
+            {cashTxType === "cash_in" ? "Cash In" : "Cash Out"}
+          </Text>
+        }
+        centered
+      >
+        <Stack gap="sm">
+          <NumberInput
+            label="Jumlah"
+            placeholder="Masukkan nominal"
+            leftSection="Rp"
+            thousandSeparator="."
+            decimalSeparator=","
+            min={1}
+            value={cashTxAmount}
+            onChange={(v) => setCashTxAmount(Number(v) || 0)}
+          />
+
+          <Select
+            label="Kategori"
+            placeholder="Pilih kategori"
+            data={
+              cashTxType === "cash_in"
+                ? CASH_IN_CATEGORIES
+                : CASH_OUT_CATEGORIES
+            }
+            value={cashTxCategory}
+            onChange={(v) => setCashTxCategory(v || "")}
+            searchable
+          />
+
+          <TextInput
+            label="Keterangan"
+            placeholder="Detail pengeluaran..."
+            value={cashTxDescription}
+            onChange={(e) => setCashTxDescription(e.currentTarget.value)}
+          />
+
+          <Group mt="md" grow>
+            <Button variant="outline" onClick={hideCashTx}>
+              Batal
+            </Button>
+            <Button
+              color={cashTxType === "cash_in" ? "green" : "red"}
+              disabled={cashTxAmount <= 0 || !cashTxCategory}
+              onClick={handleCashTransaction}
+            >
+              Simpan
+            </Button>
+          </Group>
+        </Stack>
       </Modal>
     </Stack>
   );
